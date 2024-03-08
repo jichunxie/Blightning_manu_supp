@@ -1,0 +1,1160 @@
+---
+title: "simulations_plots"
+output: html_document
+date: "2024-01-31"
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library('limma')
+library('cluster')
+library('dplyr')
+library('Seurat')
+library('patchwork')
+library('stats')
+library('Rcpp')
+library('reticulate')
+library('MASS')
+library('corpcor')
+library('RcppArmadillo')
+library('ggplot2')
+library('reshape2')
+```
+```{r}
+load("~/seedsforsimulations.RData")
+```
+```{r Functions for generate simulated datasets}
+logistic <- function (x, x0, k){
+  1/(1 + exp(-k * (x - x0)))
+}
+
+getLNormFactors <- function (n.facs, is.selected, neg.prob, fac.loc, fac.scale){
+  n.selected <- length(is.selected)
+  dir.selected <- (-1)^rbinom(n.selected, 1, neg.prob)
+  facs.selected <- rlnorm(n.selected, fac.loc, fac.scale)
+  dir.selected[facs.selected < 1] <- -1 * dir.selected[facs.selected < 1]
+  factors <- rep(1, n.facs)
+  factors[is.selected] <- facs.selected^dir.selected
+  return(factors)
+}
+
+
+simulation <- function(nCells = 6000, nGenes = 5000, lib.loc = 9.3, lib.scale = 0.25, mean.shape = 0.3, mean.rate = 0.15, 
+                       nGroups = 4, groups = rep(1:4, each = 1500),
+                       de.facLoc = list(rep(0.7, 90), 
+                                        c(rep(0.7, 60), rep(0.6, 10), rep(0.4, 10), rep(0.2, 10)), 
+                                        c(rep(0.2, 10), rep(0.4, 10), rep(0.6, 10), rep(0.7, 30), rep(0.6, 10), rep(0.4, 10), rep(0.2, 10)), 
+                                        c(rep(0.2, 10), rep(0.4, 10), rep(0.6, 10), rep(0.7, 60))), 
+                       de.facScale = rep(0.2, 4), de.downProb = rep(0, 4), 
+                       de.id = list(1:90, 91:180, 151:240, 211:300),
+                       add_sub = FALSE, sub_major = 1:4, sub_group = list(1:100, 1501:1600, 3001:3100, 4501:4600), 
+                       sub.de.id = list(401:420, 401:420, 401:420, 401:420), sub.de.common = TRUE,
+                       sub.de.facLoc = list(rep(0.4, 20), rep(0.4, 20), rep(0.4, 20), rep(0.4, 20)), 
+                       sub.de.facScale = rep(0.2, 4), sub.de.downProb = rep(0, 4), 
+                       add_cor = FALSE, corr = 6:9/10, cor_pos = list(301:320, 321:340, 341:360, 361:380), band_width = 10,
+                       add_hub = FALSE, hub_cor = rep(rep(c(0.2, 0.4), each = 5), 2), hub_id = 381:400, hub_size = rep(c(10, 20), each = 10), 
+                       hub_start = 401, hub_fix = list(1:5, 91:95, 151:155, 181:185, 231:235, c(), c(), c(), c(), c(), 
+                                                       c(), c(), c(), c(), c(), c(), c(), c(), c(), c()),
+                       drop = TRUE, dropout.mid = -2, dropout.shape = -1,seed = 1){
+  set.seed(seed)
+  # Parameters for sub-cell-types
+  # add_sub: whether to add sub-cell-types
+  # sub_major: the major cell types correspond to the sub-cell-types
+  # sub_group: cell index for sub-cell-types
+  # sub.de.id: additional differentially expressed genes for sub-cell-types
+  # sub.de.common: whether the additional differential expression structure should be same for all sub-cell-types
+  # sub.de.facLoc, sub.de.facScale, sub.de.downProb: similar to de.facLoc, de.facScale and de.downProb, 
+  # but for addtional differentially expressed genes in sub-cell-types
+  
+  # Parameters for correlated genes
+  # add_cor: whether to add correlated genes
+  # corr: correlation parameters
+  # cor_pos: gene index of correlated genes
+  # band_width: No correlation exists if distance of 2 genes are further than band_width in a pathway
+  
+  # Parameters for hub genes
+  # add_hub: whether to add hub genes
+  # hub_cor: correlation parameters between hub genes and their correlated genes
+  # hub_id: gene index of hub genes
+  # hub_size: number of genes correlated to the hub gene
+  # hub_start: the minimum gene index for sampling genes correlated to hub genes
+  # hub_fix: user defined genes correlated to hub genes, can exceed the hub_start parameter
+  
+  # Other parameters are defined similarly as in splatter package
+  # https://www.bioconductor.org/packages/release/bioc/vignettes/splatter/inst/doc/splat_params.html
+  
+  # The correlation parameter is used for normal Copula. Those are not the correlations between observed values.
+  
+  
+  # simulate basic counts 
+  exp.lib.sizes <- rlnorm(nCells, lib.loc, lib.scale)   # library size
+  base.means.gene <- rgamma(nGenes, shape = mean.shape, rate = mean.rate)   # gene expression level
+  
+  group.facs.gene <- matrix(1, ncol = nGroups, nrow = nGenes)
+  for (idx in seq_len(nGroups)) {
+    de.facs <- getLNormFactors(nGenes, de.id[[idx]], de.downProb[idx], de.facLoc[[idx]], de.facScale[idx])
+    group.facs.gene[, idx] <- de.facs
+  }   # differential expression fold change parameter
+  
+  group.facs.gene.total <- group.facs.gene
+  
+  if (add_sub){
+    sub.group.facs.gene <- matrix(1, ncol = length(sub_major), nrow = nGenes)
+    for (i in 1:length(sub_major)){
+      sub.group.facs.gene[,i] <- group.facs.gene[, sub_major[i]]
+    }
+    if (sub.de.common){
+      sub.de.facs <- getLNormFactors(nGenes, sub.de.id[[1]], sub.de.downProb[1], sub.de.facLoc[[1]], sub.de.facScale[1])
+      sub.group.facs.gene[sub.de.id[[1]], ] <- matrix(sub.de.facs[sub.de.id[[1]]], nrow = length(sub.de.id[[1]]), ncol = length(sub_major), byrow = F)
+    } else {
+      sub.de.facs <- getLNormFactors(nGenes, sub.de.id[[1]], sub.de.downProb[1], sub.de.facLoc[[1]], sub.de.facScale[1])
+      
+      for (idx in seq_len(nGroups)) {
+        #sub.de.facs <- getLNormFactors(nGenes, sub.de.id[[idx]], sub.de.downProb[1], sub.de.facLoc[[1]], sub.de.facScale[1])
+        sub.group.facs.gene[sub.de.id[[idx]], idx] <- sub.de.facs[intersect(sub.de.id[[1]],sub.de.id[[idx]])]
+      }
+    }
+    group.facs.gene.total <- cbind(group.facs.gene, sub.group.facs.gene)
+  }
+  
+  
+  groups_new <- groups
+  if (add_sub){
+    for (i in 1:length(sub_major)){
+      groups_new[sub_group[[i]]] <- i + nGroups
+    }
+  }
+  
+  
+  cell.facs.gene <- as.matrix(group.facs.gene.total[, groups_new])
+  cell.means.gene <- base.means.gene * cell.facs.gene
+  cell.props.gene <- cell.means.gene / matrix(colSums(cell.means.gene), nrow = nGenes, ncol = nCells, byrow = T)
+  base.means.cell <- cell.props.gene * matrix(exp.lib.sizes, nrow = nGenes, ncol = nCells, byrow = T)
+  
+  true.counts <- matrix(rpois(as.numeric(nGenes) * as.numeric(nCells), 
+                              lambda = base.means.cell), nrow = nGenes, ncol = nCells)
+  
+  # simulate the sub-cell-types
+  
+  
+  # simulate the correlated genes
+  if (add_cor){
+    for (j in 1:length(corr)){
+      l <- length(cor_pos[[j]])
+      S <- matrix(0, l, l)
+      diag(S) <- 1
+      for (i in 1:(l-1)){
+        for (k in (i+1):l){
+          temp <- corr[j] ^ (k-i)
+          if ((k - i) <= band_width){
+            S[i, k] <- temp
+            S[k, i] <- temp
+          }
+        }
+      } # build covariance matrix
+      e1 <- min(eigen(S)$values)
+      if (e1 <= 0){
+        S <- S + diag(0.1 - e1, nrow(S))
+      } # deal with covariance matrix that are not positive definite
+      sim <- mvrnorm(nCells, rep(0, l), S)
+      psim <- pnorm(sim)
+      temp <- qpois(t(psim), base.means.cell[cor_pos[[j]],])
+      true.counts[cor_pos[[j]],] <- temp
+    }
+  }
+  
+  # simulate the hub genes
+  hub_list <- list()
+  if (add_hub){
+    all_fixed <- unique(c(unlist(de.id), hub_id, unlist(hub_fix)))
+    if (add_sub){
+      all_fixed <- unique(c(unlist(sub.de.id), all_fixed))
+    }
+    if (add_cor){
+      all_fixed <- unique(c(unlist(cor_pos), all_fixed))
+    }
+    gene_set_left <- setdiff(1:nGenes, all_fixed)
+    for (j in 1:length(hub_id)){
+      l <- hub_size[j]
+      S <- matrix(0, l, l)
+      S[1,] <- hub_cor[j]
+      S[,1] <- hub_cor[j]
+      diag(S) <- 1  # build covariance matrix
+      S1 <- make.positive.definite(S) # deal with covariance matrix that are not positive definite
+      sim <- mvrnorm(nCells, rep(0, l), S1)
+      psim <- pnorm(sim)
+      hub_pos <- sample(gene_set_left, l-length(hub_fix[[j]]), replace = FALSE)
+      hub_pos <- c(hub_id[j], hub_fix[[j]], hub_pos)
+      gene_set_left <- setdiff(gene_set_left, hub_pos)
+      hub_list[[j]] <- hub_pos
+      temp <- qpois(t(psim), base.means.cell[hub_pos,])
+      true.counts[hub_pos,] <- temp
+    }
+  }
+  
+  # add dropout
+  if (drop){
+    dropout.mid <- rep(dropout.mid, nCells)
+    dropout.shape <- rep(dropout.shape, nCells)
+    drop.prob <- vapply(seq_len(nCells), function(idx) {
+      eta <- log(base.means.cell[, idx])
+      return(logistic(eta, x0 = dropout.mid[idx], k = dropout.shape[idx]))
+    }, as.numeric(seq_len(nGenes)))
+    keep <- matrix(rbinom(nCells * nGenes, 1, 1 - drop.prob), nrow = nGenes, ncol = nCells)
+    counts <- true.counts * keep
+  } else {
+    counts <- true.counts
+  }
+  return(list(counts = counts, true.counts = true.counts, 
+              de.factor = group.facs.gene.total, hub_list = hub_list))
+}
+
+
+```
+```{r Simulation 1ct}
+
+  p = 5000
+  n = 10000
+  ct = 1
+  
+  groups = rep(1,n) # cell type group annotation
+  #de.facLoc, de.id, sub.de.facLoc
+  de.facLoc = list(rep(0.7, 200))
+  de.id = list(1:200)# cell type feature gene markers indices
+  sub.de.id = list(201:230)# List sen markers indices in each ct group
+  sub_group = list(1:1000) # List sen cells indices in each ct group 10% of population
+  sub.de.facLoc = list(rep(0.6, 20))
+  corr = rep(0.7,ct)
+  
+  seed = seeds[1]
+  data_sim <- simulation(nCells = n, nGenes = p, lib.loc = 11, lib.scale = 0.2, mean.shape = 0.6, mean.rate = 0.3, 
+                         nGroups = 1, groups = rep(1, 10000),
+                          de.facLoc = de.facLoc, 
+                         de.facScale = rep(0.2, 1), de.downProb = rep(0.4, 1), 
+                         de.id = de.id,
+                         add_sub = TRUE, sub_major = 1, sub_group = sub_group, 
+                         sub.de.id = sub.de.id, sub.de.common = FALSE,
+                         sub.de.facLoc = sub.de.facLoc, 
+                         sub.de.facScale = rep(0.2, 1), sub.de.downProb = rep(0.4, 1), 
+                         add_cor = TRUE, corr = rep(0.7,1), cor_pos = list(201:220), band_width = 50,
+                         add_hub = FALSE, hub_cor = rep(rep(c(0.2, 0.4), each = 5), 2), hub_id = 201:220, hub_size = rep(c(10, 20), each = 10), 
+                         hub_fix = list(1:5, 51:55, 101:105, 151:155, c(), c(), c(), c(), c(), c(), c(), c(), c(), c(), c(), c(), c(), c(), c(), c()),
+                         drop = TRUE, dropout.mid = -2, dropout.shape = -1,seed = seed)
+  
+```
+```{r Fig.2a simulation 1ct umap}
+countdat <- data_sim$counts
+rownames(countdat) <- paste("gene", 1:p)  #gene-features
+colnames(countdat) <- paste("cell", 1:n)  #cell
+
+so <- CreateSeuratObject(Matrix::Matrix(countdat,sparse = T))#gene by cell; feature ~ gene
+  
+so <- NormalizeData(so,normalization.method = "RC",scale.factor = 1)# PROB!!!
+ 
+so <- FindVariableFeatures(so, selection.method = "vst", nfeatures = 2000)
+so <- ScaleData(so, features = VariableFeatures(so))
+so <- RunPCA(so, features = VariableFeatures(so))
+so <- FindNeighbors(so, dims = 1:10)
+so <- FindClusters(so, resolution = 0.5)
+so <- RunUMAP(so, dims = 1:10)
+
+DimPlot(so, reduction = "umap")
+Idents(so) = c(rep('Featured Cells',each = 1000),rep('Non-Featured Cells',each = 10000 - 1000))
+DimPlot(so, reduction = "umap")
+
+umap_1ct = data.frame(so@reductions$umap@cell.embeddings)
+colnames(umap_1ct) = c("UMAP1","UMAP2")
+umap_1ct$ct = Idents(so)
+saveRDS(umap_1ct,"umap_1ct.rds")
+
+umap_1ct$ct = c(rep('CT-1 Stage-2',each = 1000),rep('CT-1 Stage-1',each = 10000 - 1000))
+umap_1ct$`Cell Type` = 'CT-1'
+jpeg("umap_1ct.jpeg",width=30,height=20,units="cm",res=300)
+umap_1ct %>% ggplot(aes(x = UMAP1,y = UMAP2,colour = `Cell Type`)) + geom_point(size = 2) + theme_minimal() + scale_colour_manual(values = c("#7DABCF","#7DABCF"))+ theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold"))  + labs(color='Cell Type') + guides(colour = guide_legend(override.aes = list(size=10)))
+dev.off()
+
+```
+```{r Simulation 4ct}
+
+  p = 5000
+  n = 10000
+  
+  ct = 4
+  
+  groups = c(rep(1:4, c(1000, 2000, 3000, 4000))) # cell type group annotation
+  #de.facLoc, de.id, sub.de.facLoc
+  
+
+  corr = rep(0.7,ct)
+  
+  
+  seed = seeds[3]
+ 
+  data_sim <- simulation(nCells = n, nGenes = p, lib.loc = 11, lib.scale = 0.2, mean.shape = 0.6, mean.rate = 0.3, 
+                         nGroups = ct, groups = groups,
+                         de.facLoc = list(rep(0.7, 210), rep(0.7, 210), rep(0.7, 210), rep(0.7, 210)), 
+                         de.facScale = rep(0.2, 4), de.downProb = rep(0.4, 4), 
+                         de.id = list(301:510, 511:720, 721:930, 931:1140),
+                         add_sub = TRUE, sub_major = 1:4, sub_group = list(1:100,1001:1200,3001:3300,6001:6400), 
+                         sub.de.id = list(201:230,201:230,201:230,201:230), sub.de.common = FALSE,
+                         sub.de.facLoc = list(rep(0.6, 30), rep(0.6, 30), rep(0.6, 30), rep(0.6, 30)), 
+                         sub.de.facScale = rep(0.2, 4), sub.de.downProb = rep(0.4, 4), 
+                         add_cor = TRUE, corr = corr, cor_pos = list(201:230,201:230,201:230,201:230), band_width = 50,
+                         add_hub = FALSE, hub_cor = rep(rep(c(0.2, 0.4), each = 5), 2), hub_id = 201:220, hub_size = rep(c(10, 20), each = 10), 
+                         hub_fix = list(1:5, 51:55, 101:105, 151:155, c(), c(), c(), c(), c(), c(), c(), c(), c(), c(), c(), c(), c(), c(), c(), c()),
+                         drop = TRUE, dropout.mid = -2, dropout.shape = -1,seed = seed)
+  
+```
+```{r Fig.2b simulation 4ct umap}
+countdat <- data_sim$counts
+rownames(countdat) <- paste("gene", 1:p)  #gene-features
+colnames(countdat) <- paste("cell", 1:n)  #cell
+
+so <- CreateSeuratObject(Matrix::Matrix(countdat,sparse = T))#gene by cell; feature ~ gene
+  
+so <- NormalizeData(so,normalization.method = "RC",scale.factor = 1)# PROB!!!
+ 
+so <- FindVariableFeatures(so, selection.method = "vst", nfeatures = 2000)
+so <- ScaleData(so, VariableFeatures(so) )
+so <- RunPCA(so, features = paste("gene",c(201:210,301:1100)) )
+
+so <- FindNeighbors(so, dims = 1:10)
+so <- FindClusters(so, resolution = 0.5)
+so <- RunUMAP(so, dims = 1:10)
+
+DimPlot(so, reduction = "umap")
+Idents(so) =  c(rep(c("Featured Cells (Cell Type 1)","Non-Featured Cells (Cell Type 1)","Featured Cells (Cell Type 2)","Non-Featured Cells (Cell Type 2)","Featured Cells (Cell Type 3)","Non-Featured Cells (Cell Type 3)","Featured Cells (Cell Type 4)","Non-Featured Cells (Cell Type 4)"), c(100,900,200,1800, 300,2700,400, 3600)))
+DimPlot(so, reduction = "umap")
+
+umap_4ct = data.frame(so@reductions$umap@cell.embeddings)
+colnames(umap_4ct) = c("UMAP1","UMAP2")
+umap_4ct$ct = Idents(so)
+saveRDS(umap_4ct,"umap_4ct.rds")
+
+umap_4ct$ct = c(rep(c("CT-1 Stage-2","CT-1 Stage-1","CT-2 Stage-2","CT-2 Stage-1","CT-3 Stage-2","CT-3 Stage-1","CT-4 Stage-2","CT-4 Stage-1"), c(100,900,200,1800, 300,2700,400, 3600)))
+umap_4ct$`Cell Type` = substring(umap_4ct$ct,1,4)
+
+jpeg("umap_4ct.jpeg",width=30,height=20,units="cm",res=300)
+umap_4ct %>% ggplot(aes(x = UMAP1,y = UMAP2,colour = `Cell Type`)) + geom_point(size = 2) + theme_minimal() + scale_colour_manual(values = c("#2b6a99","#DB614F","#FCBB44","#9bc8d9"))+ theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold"))  + labs(color='Cell Type') + guides(colour = guide_legend(override.aes = list(size=10)))
+dev.off()
+```
+```{r Simulation 4ct v2}
+
+  p = 5000
+  n = 10000
+  
+  ct = 4
+  
+  groups = c(rep(1:4, c(1000, 2000, 3000, 4000))) # cell type group annotation
+  #de.facLoc, de.id, sub.de.facLoc
+  
+
+  corr = rep(0.7,ct)
+  
+  
+  seed = seeds[3]
+ 
+  data_sim <- simulation(nCells = n, nGenes = p, lib.loc = 11, lib.scale = 0.2, mean.shape = 0.6, mean.rate = 0.3, 
+                         nGroups = ct, groups = groups,
+                         de.facLoc = list(rep(0.7, 210), rep(0.7, 210), rep(0.7, 210), rep(0.7, 210)), 
+                         de.facScale = rep(0.2, 4), de.downProb = rep(0.4, 4), 
+                         de.id = list(301:510, 511:720, 721:930, 931:1140),
+                         add_sub = TRUE, sub_major = 1:4, sub_group = list(1:100,1001:1200,3001:3300,6001:6400), 
+                         sub.de.id = list(201:245,c(201:215,231:245),201:230,c(201:215,231:245)), sub.de.common = FALSE,
+                         sub.de.facLoc = list(rep(0.6, 45), rep(0.6, 30), rep(0.6, 30), rep(0.6, 30)), 
+                         sub.de.facScale = rep(0.2, 4), sub.de.downProb = rep(0.4, 4), 
+                         add_cor = TRUE, corr = corr, cor_pos = list(201:245,c(201:215,231:245),201:230,c(201:215,231:245)), band_width = 50,
+                         add_hub = FALSE, hub_cor = rep(rep(c(0.2, 0.4), each = 5), 2), hub_id = 201:220, hub_size = rep(c(10, 20), each = 10), 
+                         hub_fix = list(1:5, 51:55, 101:105, 151:155, c(), c(), c(), c(), c(), c(), c(), c(), c(), c(), c(), c(), c(), c(), c(), c()),
+                         drop = TRUE, dropout.mid = -2, dropout.shape = -1,seed = seed)
+  
+```
+```{r Fig.2c simulation 4ct v2 umap}
+countdat <- data_sim$counts
+rownames(countdat) <- paste("gene", 1:p)  #gene-features
+colnames(countdat) <- paste("cell", 1:n)  #cell
+
+so <- CreateSeuratObject(Matrix::Matrix(countdat,sparse = T))#gene by cell; feature ~ gene
+  
+so <- NormalizeData(so,normalization.method = "RC",scale.factor = 1)# PROB!!!
+ 
+so <- FindVariableFeatures(so, selection.method = "vst", nfeatures = 2000)
+so <- ScaleData(so, features = paste("gene",c(201:230,301:1100)) )
+so <- RunPCA(so, features = paste("gene",c(201:210,301:1100)) )
+
+so <- FindNeighbors(so, dims = 1:10)
+so <- FindClusters(so, resolution = 0.5)
+so <- RunUMAP(so, dims = 1:10)
+
+DimPlot(so, reduction = "umap")
+Idents(so) =  c(rep(c("Featured Cells (Cell Type 1)","Non-Featured Cells (Cell Type 1)","Featured Cells (Cell Type 2)","Non-Featured Cells (Cell Type 2)","Featured Cells (Cell Type 3)","Non-Featured Cells (Cell Type 3)","Featured Cells (Cell Type 4)","Non-Featured Cells (Cell Type 4)"), c(100,900,200,1800, 300,2700,400, 3600)))
+DimPlot(so, reduction = "umap")
+
+umap_4ct_v2 = data.frame(so@reductions$umap@cell.embeddings)
+colnames(umap_4ct_v2) = c("UMAP1","UMAP2")
+umap_4ct_v2$ct = Idents(so)
+saveRDS(umap_4ct_v2,"umap_4ct_v2.rds")
+umap_4ct_v2 %>% ggplot() + geom_point(aes(x = UMAP1,y = UMAP2,colour = ct)) + theme_minimal() + scale_colour_brewer(palette = "Set1")
+
+umap_4ct_v2$ct = c(rep(c("CT-1 Stage-2","CT-1 Stage-1","CT-2 Stage-2","CT-2 Stage-1","CT-3 Stage-2","CT-3 Stage-1","CT-4 Stage-2","CT-4 Stage-1"), c(100,900,200,1800, 300,2700,400, 3600)))
+umap_4ct_v2$`Cell Type` = substring(umap_4ct_v2$ct,1,4)
+jpeg("umap_4ct_v2.jpeg",width=30,height=20,units="cm",res=300)
+umap_4ct_v2 %>% ggplot(aes(x = UMAP1,y = UMAP2,colour = `Cell Type`)) + geom_point(size = 2) + theme_minimal() + scale_colour_manual(values = c("#2b6a99","#DB614F","#FCBB44","#9bc8d9"))+ theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold"))  + labs(color='Cell Type') + guides(colour = guide_legend(override.aes = list(size=10)))
+dev.off()
+```
+```{r simulation 8ct}
+  p = 5000
+  n = 20000
+  
+  ct = 8
+  
+  groups = c(rep(1:4, c(1000, 2000, 3000, 4000)),
+             rep(5:8, c(1000, 2000, 3000, 4000))) # cell type group annotation
+  #de.facLoc, de.id, sub.de.facLoc
+  
+
+  corr = rep(0.7,ct)
+  
+  
+  seed = 2
+ 
+  data_sim <- simulation(nCells = n, nGenes = p, lib.loc = 11, lib.scale = 0.2, mean.shape = 0.6, mean.rate = 0.3, 
+                         nGroups = ct, groups = groups,
+                         de.facLoc = list(rep(0.7, 210), rep(0.7, 210), rep(0.7, 210), rep(0.7, 210),rep(0.7, 210), rep(0.7, 210), rep(0.7, 210), rep(0.7, 210)), 
+                         de.facScale = rep(0.2, 8), de.downProb = rep(0.4, 8), 
+                         de.id = list(301:510, 511:720, 721:930, 931:1140,1141:1350,1351:1560,1561:1770,1771:1980),
+                         add_sub = TRUE, sub_major = 1:8, sub_group = list(1:100,1001:1200,3001:3300,6001:6400,10001:10100,11001:11200,13001:13300,16001:16400), 
+                         sub.de.id = list(201:230,201:230,201:230,201:230,201:230,201:230,201:230,201:230), sub.de.common = FALSE,
+                         sub.de.facLoc = list(rep(0.6, 30), rep(0.6, 30), rep(0.6, 30), rep(0.6, 30),rep(0.6, 30), rep(0.6, 30), rep(0.6, 30), rep(0.6, 30)), 
+                         sub.de.facScale = rep(0.2, 8), sub.de.downProb = rep(0.4, 8), 
+                         add_cor = TRUE, corr = corr, cor_pos = list(201:230,201:230,201:230,201:230,201:230,201:230,201:230,201:230), band_width = 50,
+                         add_hub = FALSE, hub_cor = rep(rep(c(0.2, 0.4), each = 5), 2), hub_id = 201:220, hub_size = rep(c(10, 20), each = 10), 
+                         hub_fix = list(1:5, 51:55, 101:105, 151:155, c(), c(), c(), c(), c(), c(), c(), c(), c(), c(), c(), c(), c(), c(), c(), c()),
+                         drop = TRUE, dropout.mid = -2, dropout.shape = -1,seed = seed)
+  
+```
+```{r Fig.2d simulation 8ct umap}
+countdat <- data_sim$counts
+rownames(countdat) <- paste("gene", 1:p)  #gene-features
+colnames(countdat) <- paste("cell", 1:n)  #cell
+
+so <- CreateSeuratObject(Matrix::Matrix(countdat,sparse = T))#gene by cell; feature ~ gene
+  
+so <- NormalizeData(so,normalization.method = "RC",scale.factor = 1)# PROB!!!
+ 
+so <- FindVariableFeatures(so, selection.method = "vst", nfeatures = 2000)
+so <- ScaleData(so, features = VariableFeatures(so) )
+so <- RunPCA(so, features = paste("gene",c(201:210,301:2000)) )
+
+so <- FindNeighbors(so, dims = 1:10)
+so <- FindClusters(so, resolution = 0.5)
+so <- RunUMAP(so, dims = 1:10)
+
+DimPlot(so, reduction = "umap")
+Idents(so) =  c(rep(c("Featured Cells (Cell Type 1)","Non-Featured Cells (Cell Type 1)","Featured Cells (Cell Type 2)","Non-Featured Cells (Cell Type 2)","Featured Cells (Cell Type 3)","Non-Featured Cells (Cell Type 3)","Featured Cells (Cell Type 4)","Non-Featured Cells (Cell Type 4)"), c(100,900,200,1800, 300,2700,400, 3600)),rep(c("Featured Cells (Cell Type 5)","Non-Featured Cells (Cell Type 5)","Featured Cells (Cell Type 6)","Non-Featured Cells (Cell Type 6)","Featured Cells (Cell Type 7)","Non-Featured Cells (Cell Type 7)","Featured Cells (Cell Type 8)","Non-Featured Cells (Cell Type 8)"), c(100,900,200,1800, 300,2700,400, 3600)))
+DimPlot(so, reduction = "umap")
+
+
+umap_8ct = data.frame(so@reductions$umap@cell.embeddings)
+colnames(umap_8ct) = c("UMAP1","UMAP2")
+umap_8ct$ct = Idents(so)
+saveRDS(umap_8ct,"umap_8ct.rds")
+umap_8ct %>% ggplot() + geom_point(aes(x = UMAP1,y = UMAP2,colour = ct)) + theme_minimal() 
+
+
+umap_8ct$ct = c(rep(c("CT-1 Stage-2","CT-1 Stage-1","CT-2 Stage-2","CT-2 Stage-1","CT-3 Stage-2","CT-3 Stage-1","CT-4 Stage-2","CT-4 Stage-1"), c(100,900,200,1800, 300,2700,400, 3600)),
+                rep(c("CT-5 Stage-2","CT-5 Stage-1","CT-6 Stage-2","CT-6 Stage-1","CT-7 Stage-2","CT-7 Stage-1","CT-8 Stage-2","CT-8 Stage-1"), c(100,900,200,1800, 300,2700,400, 3600)))
+umap_8ct$`Cell Type` = substring(umap_8ct$ct,1,4)
+umap_8ct$`Stage` = substring(umap_8ct$ct,6,12)
+
+jpeg("umap_8ct.jpeg",width=30,height=20,units="cm",res=300)
+umap_8ct %>% ggplot(aes(x = UMAP1,y = UMAP2,colour = Stage,fill = `Cell Type`)) + geom_point(size = 2,pch = 21) + theme_minimal() + scale_fill_brewer(palette = "Paired") + 
+  scale_colour_manual(values = c(yarrr::transparent(),"black")) +theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold"))  + labs(color='Cell Type') + guides(fill = guide_legend(override.aes = list(size=10)),color = "none")
+dev.off()
+
+jpeg("umap_8ct.jpeg",width=30,height=20,units="cm",res=300)
+umap_8ct %>% ggplot(aes(x = UMAP1,y = UMAP2)) + geom_point(size = 2,aes(colour = `Cell Type`)) + theme_minimal() + scale_colour_brewer(palette = "Paired")  +theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold"))  + labs(colour='Cell Type') + guides(colour = guide_legend(override.aes = list(size=10))) 
+dev.off()
+```
+```{r Results Loading}
+load("results/GF1ct_10%_1030_results.RData")
+GF_Records1ct = Records1ct
+load("results/GF4ct_10%_1030_results.RData")
+GF_Records4ct = Records4ct
+load("results/GF4ct_v2_10%_1030_results.RData")
+GF_Records4ct_v2 = Records4ct_v2
+load("results/GF8ct_10%_1030_results.RData")
+GF_Records8ct = Records8ct
+
+
+load("results/Simulation1ct_10%_1030_results.RData") #Records1ct
+load("results/Simulation4ct_10%_1030_results2.RData") #Records4ct
+load("results/Simulation4ct_v2_10%_1030_results2.RData")#Records4ct_v2
+load("results/Simulation8ct_10%_1030_results.RData")#Records8ct
+
+load("results/MAST1ct_10%_1030_results.RData")#Traditional_Records1ct_default
+load("results/MAST4ct_10%_1030_results.RData")#Traditional_Records4ct
+load("results/MAST4ct_v2_10%_1030_results.RData")#Traditional_Records4ct_v2
+load("results/MAST8ct_10%_1030_results.RData")#Traditional_Records4ct_v2
+
+```
+```{r Blightning_Simulation_1ct}
+
+df = data.frame(seed = integer(),
+                 FP = integer(),
+                FN = integer(),
+                TP = integer(),
+                FDR = vector(),
+                sen = vector(),
+                F1 = vector()
+                 )
+
+for (i in 0:(length(Records1ct)/5 - 1)){
+  
+  seed = Records1ct[[5 * i + 1]]
+  truth = c(Records1ct[[5*i + 4]],Records1ct[[5*i + 5]])
+  #False Positive
+  FP = length(setdiff(c(Records1ct[[5*i + 2]],Records1ct[[5*i + 3]]), truth))
+  
+  #False Negative
+  FN = length(setdiff(truth,c(Records1ct[[5*i + 2]],Records1ct[[5*i + 3]])))
+  #True Positive
+  TP = length(intersect(c(Records1ct[[5*i + 2]],Records1ct[[5*i + 3]]), truth))
+  
+  # True Negative
+  TN = 5000 - length(unique(c(c(Records1ct[[5*i + 2]],Records1ct[[5*i + 3]]), truth)))
+  
+  
+  
+  FDR = FP/(FP + TP)
+  sen = TP/(TP + FN)
+  
+  F1 = 2*TP/(2*TP + FP + FN)
+  
+    
+  df[i + 1,] = c(seed,
+                            FP,
+                           FN,
+                           TP,
+                           FDR,
+                           sen,
+                           F1)
+}
+Simulation1ct_Results = df
+#save(Simulation1ct_Results,file = "Simulation1ct_Restuls.RData")
+```
+```{r Blightning_Simulation_4ct}
+
+df = data.frame(seed = integer(),
+                 FP = integer(),
+                FN = integer(),
+                TP = integer(),
+                FDR = vector(),
+                sen = vector(),
+                F1 = vector()
+                 )
+
+for (i in 0:(length(Records4ct)/5 - 1)){
+  
+  seed = Records4ct[[5 * i + 1]]
+  truth = c(Records4ct[[5*i + 4]],Records4ct[[5*i + 5]])
+  #False Positive
+  FP = length(setdiff(c(Records4ct[[5*i + 2]],Records4ct[[5*i + 3]]), truth))
+  
+  #False Negative
+  FN = length(setdiff(truth,c(Records4ct[[5*i + 2]],Records4ct[[5*i + 3]])))
+  #True Positive
+  TP = length(intersect(c(Records4ct[[5*i + 2]],Records4ct[[5*i + 3]]), truth))
+  
+  # True Negative
+  TN = 5000 - length(unique(c(c(Records4ct[[5*i + 2]],Records4ct[[5*i + 3]]), truth)))
+  
+  
+  
+  FDR = FP/(FP + TP)
+  sen = TP/(TP + FN)
+  
+  F1 = 2*TP/(2*TP + FP + FN)
+  
+    
+  df[i + 1,] = c(seed,
+                            FP,
+                           FN,
+                           TP,
+                           FDR,
+                           sen,
+                           F1)
+}
+Simulation4ct_Results = df
+
+```
+```{r Blightning_Simulation_4ct_v2}
+df = data.frame(seed = integer(),
+                 FP = integer(),
+                FN = integer(),
+                TP = integer(),
+                FDR = vector(),
+                sen = vector(),
+                F1 = vector()
+                 )
+
+for (i in 0:(length(Records4ct_v2)/5 - 1)){
+  
+  seed = Records4ct_v2[[5 * i + 1]]
+  truth = c(Records4ct_v2[[5*i + 4]],Records4ct_v2[[5*i + 5]])
+  #False Positive
+  FP = length(setdiff(c(Records4ct_v2[[5*i + 2]],Records4ct_v2[[5*i + 3]]), truth))
+  
+  #False Negative
+  FN = length(setdiff(truth,c(Records4ct_v2[[5*i + 2]],Records4ct_v2[[5*i + 3]])))
+  #True Positive
+  TP = length(intersect(c(Records4ct_v2[[5*i + 2]],Records4ct_v2[[5*i + 3]]), truth))
+  
+  # True Negative
+  TN = 5000 - length(unique(c(c(Records4ct_v2[[5*i + 2]],Records4ct_v2[[5*i + 3]]), truth)))
+  
+  
+  
+  FDR = FP/(FP + TP)
+  sen = TP/(TP + FN)
+  
+  F1 = 2*TP/(2*TP + FP + FN)
+  
+    
+  df[i + 1,] = c(seed,
+                            FP,
+                           FN,
+                           TP,
+                           FDR,
+                           sen,
+                           F1)
+}
+Simulation4ct_v2_Results = df
+
+```
+```{r Blightning_Simulation_8ct}
+
+df = data.frame(seed = integer(),
+                 FP = integer(),
+                FN = integer(),
+                TP = integer(),
+                FDR = vector(),
+                sen = vector(),
+                F1 = vector()
+                 )
+
+for (i in 0:(length(Records8ct)/5 - 1)){
+  
+  seed = Records8ct[[5 * i + 1]]
+  truth = c(Records8ct[[5*i + 4]],Records8ct[[5*i + 5]])
+  #False Positive
+  FP = length(setdiff(c(Records8ct[[5*i + 2]],Records8ct[[5*i + 3]]), truth))
+  
+  #False Negative
+  FN = length(setdiff(truth,c(Records8ct[[5*i + 2]],Records8ct[[5*i + 3]])))
+  #True Positive
+  TP = length(intersect(c(Records8ct[[5*i + 2]],Records8ct[[5*i + 3]]), truth))
+  
+  # True Negative
+  TN = 5000 - length(unique(c(c(Records8ct[[5*i + 2]],Records8ct[[5*i + 3]]), truth)))
+  
+  
+  
+  FDR = FP/(FP + TP)
+  sen = TP/(TP + FN)
+  
+  F1 = 2*TP/(2*TP + FP + FN)
+  
+    
+  df[i + 1,] = c(seed,
+                            FP,
+                           FN,
+                           TP,
+                           FDR,
+                           sen,
+                           F1)
+}
+Simulation8ct_Results = df
+
+```
+```{r Tradition1_Simulation_1ct}
+#load("MAST1ct_10%_1030_results.RData")
+df = data.frame(seed = integer(),
+                 FP = integer(),
+                FN = integer(),
+                TP = integer(),
+                FDR = vector(),
+                sen = vector(),
+                F1 = vector()
+                 )
+
+for (i in 0:(length(Traditional_Records1ct_default)/5 - 1)){
+  
+  seed = Traditional_Records1ct_default[[5 * i + 1]]
+  Traditional_Records1ct_default[[5 * i + 2]] = setdiff(Traditional_Records1ct_default[[5 * i + 2]], paste("gene",201:210))
+  
+   Traditional_Records1ct_default[[5 * i + 3]] = setdiff(Traditional_Records1ct_default[[5 * i + 3]], paste("gene",201:210))
+   
+  truth = c(Traditional_Records1ct_default[[5*i + 4]],Traditional_Records1ct_default[[5*i + 5]])
+  
+  #False Positive
+  FP = length(setdiff(c(Traditional_Records1ct_default[[5*i + 2]],Traditional_Records1ct_default[[5*i + 3]]), truth))
+  
+  #False Negative
+  FN = length(setdiff(truth,c(Traditional_Records1ct_default[[5*i + 2]],Traditional_Records1ct_default[[5*i + 3]])))
+  #True Positive
+  TP = length(intersect(c(Traditional_Records1ct_default[[5*i + 2]],Traditional_Records1ct_default[[5*i + 3]]), truth))
+  # True Negative
+  TN = 5000 - length(unique(c(c(Traditional_Records1ct_default[[5*i + 2]],Traditional_Records1ct_default[[5*i + 3]]), truth)))
+  
+  FDR = FP/(FP + TP)
+  sen = TP/(TP + FN)
+  F1 = 2*TP/(2*TP + FP + FN)
+  
+    
+  df[i + 1,] = c(seed,
+                            FP,
+                           FN,
+                           TP,
+                           FDR,
+                           sen,
+                           F1)
+}
+Tradition1ct_Results = df
+```
+```{r Tradition1_Simulation_4ct}
+
+df = data.frame(seed = integer(),
+                 FP = integer(),
+                FN = integer(),
+                TP = integer(),
+                FDR = vector(),
+                sen = vector(),
+                F1 = vector()
+                 )
+
+for (i in 0:(length(Traditional_Records4ct)/5 - 1)){
+  
+  seed = Traditional_Records4ct[[5 * i + 1]]
+  truth = c(Traditional_Records4ct[[5*i + 4]],Traditional_Records4ct[[5*i + 5]])
+  
+  #False Positive
+  FP = length(setdiff(setdiff(c(Traditional_Records4ct[[5*i + 2]],Traditional_Records4ct[[5*i + 3]]),paste("gene",201:210)), truth))
+  
+  #False Negative
+  FN = length(setdiff(truth,setdiff(c(Traditional_Records4ct[[5*i + 2]],Traditional_Records4ct[[5*i + 3]]),paste("gene",201:210))))
+  
+  #True Positive
+  TP = length(intersect(setdiff(c(Traditional_Records4ct[[5*i + 2]],Traditional_Records4ct[[5*i + 3]]),paste("gene",201:210)), truth))
+  
+  # True Negative
+  TN = 5000 - length(unique(c(setdiff(c(Traditional_Records4ct[[5*i + 2]],Traditional_Records4ct[[5*i + 3]]),paste("gene",201:210)), truth)))
+  
+  
+  FDR = FP/(FP + TP)
+  sen = TP/(TP + FN)
+  F1 = 2*TP/(2*TP + FP + FN)
+  
+    
+  df[i + 1,] = c(seed,
+                            FP,
+                           FN,
+                           TP,
+                           FDR,
+                           sen,
+                           F1)
+}
+Tradition4ct_Results = df
+
+```
+```{r Tradition1_Simulation_4ct_v2}
+
+df = data.frame(seed = integer(),
+                 FP = integer(),
+                FN = integer(),
+                TP = integer(),
+                FDR = vector(),
+                sen = vector(),
+                F1 = vector()
+                 )
+
+for (i in 0:99){
+  
+   seed = Traditional_Records4ct_v2[[5 * i + 1]]
+  truth = c(Traditional_Records4ct_v2[[5*i + 4]],Traditional_Records4ct_v2[[5*i + 5]])
+  #False Positive
+  FP = length(setdiff(setdiff(c(Traditional_Records4ct_v2[[5*i + 2]],Traditional_Records4ct_v2[[5*i + 3]]),paste("gene",201:210)), truth))
+  
+  #False Negative
+  FN = length(setdiff(truth,setdiff(c(Traditional_Records4ct_v2[[5*i + 2]],Traditional_Records4ct_v2[[5*i + 3]]),paste("gene",201:210))))
+  
+  #True Positive
+  TP = length(intersect(setdiff(c(Traditional_Records4ct_v2[[5*i + 2]],Traditional_Records4ct_v2[[5*i + 3]]),paste("gene",201:210)), truth))
+  
+  # True Negative
+  TN = 5000 - length(unique(c(setdiff(c(Traditional_Records4ct_v2[[5*i + 2]],Traditional_Records4ct_v2[[5*i + 3]]),paste("gene",201:210)), truth)))
+  
+  FDR = FP/(FP + TP)
+  sen = TP/(TP + FN)
+  
+  F1 = 2*TP/(2*TP + FP + FN)
+  
+    
+  df[i + 1,] = c(seed,
+                            FP,
+                           FN,
+                           TP,
+                           FDR,
+                           sen,
+                           F1)
+}
+Tradition4ct_v2_Results = df
+
+```
+```{r Tradition1_Simulation_8ct}
+
+df = data.frame(seed = integer(),
+                 FP = integer(),
+                FN = integer(),
+                TP = integer(),
+                FDR = vector(),
+                sen = vector(),
+                F1 = vector()
+                 )
+
+for (i in 0:(length(Traditional_Records8ct)/5 - 1)){
+  
+  seed = Traditional_Records8ct[[5 * i + 1]]
+  truth = c(Traditional_Records8ct[[5*i + 4]],Traditional_Records8ct[[5*i + 5]])
+  
+  #False Positive
+  FP = length(setdiff(setdiff(c(Traditional_Records8ct[[5*i + 2]],Traditional_Records8ct[[5*i + 3]]),paste("gene",201:210)), truth))
+  
+  #False Negative
+  FN = length(setdiff(truth,setdiff(c(Traditional_Records8ct[[5*i + 2]],Traditional_Records8ct[[5*i + 3]]),paste("gene",201:210))))
+  
+  #True Positive
+  TP = length(intersect(setdiff(c(Traditional_Records8ct[[5*i + 2]],Traditional_Records8ct[[5*i + 3]]),paste("gene",201:210)), truth))
+  
+  # True Negative
+  TN = 5000 - length(unique(c(setdiff(c(Traditional_Records8ct[[5*i + 2]],Traditional_Records8ct[[5*i + 3]]),paste("gene",201:210)), truth)))
+  
+  
+  FDR = FP/(FP + TP)
+  sen = TP/(TP + FN)
+  F1 = 2*TP/(2*TP + FP + FN)
+  
+    
+  df[i + 1,] = c(seed,
+                            FP,
+                           FN,
+                           TP,
+                           FDR,
+                           sen,
+                           F1)
+}
+
+Tradition8ct_Results = df
+
+```
+```{r GF_Simulation_1ct}
+
+df = data.frame(seed = integer(),
+                 FP = integer(),
+                FN = integer(),
+                TP = integer(),
+                FDR = vector(),
+                sen = vector(),
+                F1 = vector()
+                 )
+
+for (i in 0:(length(GF_Records1ct)/5 - 1)){
+  
+  seed = GF_Records1ct[[5 * i + 1]]
+  GF_Records1ct[[5 * i + 2]] = setdiff(GF_Records1ct[[5 * i + 2]], paste("gene",201:210))
+  
+   GF_Records1ct[[5 * i + 3]] = setdiff(GF_Records1ct[[5 * i + 3]], paste("gene",201:210))
+   
+  truth = c(GF_Records1ct[[5*i + 4]], GF_Records1ct[[5*i + 5]])
+  #False Positive
+  FP = length(setdiff(c(GF_Records1ct[[5*i + 2]],GF_Records1ct[[5*i + 3]]), truth))
+  
+  #False Negative
+  FN = length(setdiff(truth,c(GF_Records1ct[[5*i + 2]],GF_Records1ct[[5*i + 3]])))
+  
+  #True Positive
+  TP = length(intersect(c(GF_Records1ct[[5*i + 2]],GF_Records1ct[[5*i + 3]]), truth))
+  
+  # True Negative
+  TN = 5000 - length(unique(c(c(GF_Records1ct[[5*i + 2]],GF_Records1ct[[5*i + 3]]), truth)))
+  
+  
+  FDR = FP/(FP + TP)
+  sen = TP/(TP + FN)
+  
+  F1 = 2*TP/(2*TP + FP + FN)
+  
+    
+   df[i + 1,] = c(seed,
+                            FP,
+                           FN,
+                           TP,
+                           FDR,
+                           sen,
+                           F1)
+}
+GF1ct_Results = df
+```
+```{r GF_Simulation_4ct}
+
+df = data.frame(seed = integer(),
+                 FP = integer(),
+                FN = integer(),
+                TP = integer(),
+                FDR = vector(),
+                sen = vector(),
+                F1 = vector()
+                 )
+
+for (i in 0:(length(GF_Records4ct)/5 - 1)){
+  
+  seed = GF_Records4ct[[5 * i + 1]]
+  GF_Records4ct[[5 * i + 2]] = setdiff(GF_Records4ct[[5 * i + 2]], paste("gene",201:210))
+  
+   GF_Records4ct[[5 * i + 3]] = setdiff(GF_Records4ct[[5 * i + 3]], paste("gene",201:210))
+   
+  truth = c(GF_Records4ct[[5*i + 4]], GF_Records4ct[[5*i + 5]])
+  #False Positive
+  FP = length(setdiff(c(GF_Records4ct[[5*i + 2]],GF_Records4ct[[5*i + 3]]), truth))
+  
+  #False Negative
+  FN = length(setdiff(truth,c(GF_Records4ct[[5*i + 2]],GF_Records4ct[[5*i + 3]])))
+  
+  #True Positive
+  TP = length(intersect(c(GF_Records4ct[[5*i + 2]],GF_Records4ct[[5*i + 3]]), truth))
+  
+  # True Negative
+  TN = 5000 - length(unique(c(c(GF_Records4ct[[5*i + 2]],GF_Records4ct[[5*i + 3]]), truth)))
+  
+  
+  FDR = FP/(FP + TP)
+  sen = TP/(TP + FN)
+  
+  F1 = 2*TP/(2*TP + FP + FN)
+  
+    
+   df[i + 1,] = c(seed,
+                            FP,
+                           FN,
+                           TP,
+                           FDR,
+                           sen,
+                           F1)
+}
+GF4ct_Results = df
+
+```
+```{r GF_Simulation_4ct_v2}
+
+df = data.frame(seed = integer(),
+                 FP = integer(),
+                FN = integer(),
+                TP = integer(),
+                FDR = vector(),
+                sen = vector(),
+                F1 = vector()
+                 )
+
+for (i in 0:(length(GF_Records4ct_v2)/5 - 1)){
+  
+  seed = GF_Records4ct_v2[[5 * i + 1]]
+  GF_Records4ct_v2[[5 * i + 2]] = setdiff(GF_Records4ct_v2[[5 * i + 2]], paste("gene",201:210))
+  
+  GF_Records4ct_v2[[5 * i + 3]] = setdiff(GF_Records4ct_v2[[5 * i + 3]], paste("gene",201:210))
+   
+  truth = c(GF_Records4ct_v2[[5*i + 4]], GF_Records4ct_v2[[5*i + 5]])
+  #False Positive
+  FP = length(setdiff(c(GF_Records4ct_v2[[5*i + 2]],GF_Records4ct_v2[[5*i + 3]]), truth))
+  
+  #False Negative
+  FN = length(setdiff(truth,c(GF_Records4ct_v2[[5*i + 2]],GF_Records4ct_v2[[5*i + 3]])))
+  
+  #True Positive
+  TP = length(intersect(c(GF_Records4ct_v2[[5*i + 2]],GF_Records4ct_v2[[5*i + 3]]), truth))
+  
+  # True Negative
+  TN = 5000 - length(unique(c(c(GF_Records4ct_v2[[5*i + 2]],GF_Records4ct_v2[[5*i + 3]]), truth)))
+  
+  
+  FDR = FP/(FP + TP)
+  sen = TP/(TP + FN)
+  
+  F1 = 2*TP/(2*TP + FP + FN)
+  
+    
+   df[i + 1,] = c(seed,
+                            FP,
+                           FN,
+                           TP,
+                           FDR,
+                           sen,
+                           F1)
+}
+GF4ct_v2_Results = df
+
+```
+```{r GF_Simulation_8ct}
+
+df = data.frame(seed = integer(),
+                 FP = integer(),
+                FN = integer(),
+                TP = integer(),
+                FDR = vector(),
+                sen = vector(),
+                F1 = vector()
+                 )
+
+for (i in 0:(length(GF_Records8ct)/5 - 1)){
+  
+  seed = GF_Records8ct[[5 * i + 1]]
+  GF_Records8ct[[5 * i + 2]] = setdiff(GF_Records8ct[[5 * i + 2]], paste("gene",201:210))
+  
+   GF_Records8ct[[5 * i + 3]] = setdiff(GF_Records8ct[[5 * i + 3]], paste("gene",201:210))
+   
+  truth = c(GF_Records8ct[[5*i + 4]], GF_Records8ct[[5*i + 5]])
+  #False Positive
+  FP = length(setdiff(c(GF_Records8ct[[5*i + 2]],GF_Records8ct[[5*i + 3]]), truth))
+  
+  #False Negative
+  FN = length(setdiff(truth,c(GF_Records8ct[[5*i + 2]],GF_Records8ct[[5*i + 3]])))
+  
+  #True Positive
+  TP = length(intersect(c(GF_Records8ct[[5*i + 2]],GF_Records8ct[[5*i + 3]]), truth))
+  
+  # True Negative
+  TN = 5000 - length(unique(c(c(GF_Records8ct[[5*i + 2]],GF_Records8ct[[5*i + 3]]), truth)))
+  
+  
+  FDR = FP/(FP + TP)
+  sen = TP/(TP + FN)
+  
+  F1 = 2*TP/(2*TP + FP + FN)
+  
+    
+   df[i + 1,] = c(seed,
+                            FP,
+                           FN,
+                           TP,
+                           FDR,
+                           sen,
+                           F1)
+}
+GF8ct_Results = df
+
+```
+```{r}
+melt_1ct =  melt(Simulation1ct_Results, id.vars='seed', 
+                measure.vars=c("FDR","sen", "F1"))
+melt_1ct$source = "S1: B-Lightning"
+
+melt_4ct =  melt(Simulation4ct_Results, id.vars='seed', 
+                measure.vars=c("FDR","sen", "F1"))
+melt_4ct$source = "S2: B-Lightning"
+
+melt_4ct_v2 =  melt(Simulation4ct_v2_Results, id.vars='seed', 
+                measure.vars=c("FDR","sen", "F1"))
+melt_4ct_v2$source = "S3: B-Lightning"
+
+melt_1ct_traditional =  melt(Tradition1ct_Results, id.vars='seed', 
+                measure.vars=c("FDR","sen", "F1"))
+melt_1ct_traditional$source = "S1: DGE"
+
+melt_4ct_traditional = melt(Tradition4ct_Results,id.vars = 'seed', measure.vars=c("FDR","sen", "F1"))
+melt_4ct_traditional$source = "S2: DGE"
+
+melt_4ct_v2_traditional = melt(Tradition4ct_v2_Results,id.vars = 'seed', measure.vars=c("FDR","sen", "F1"))
+melt_4ct_v2_traditional$source = "S3: DGE"
+
+melt_1ct_GF =  melt(GF1ct_Results, id.vars='seed', 
+                measure.vars=c("FDR","sen", "F1"))
+melt_1ct_GF$source = "S1: GeneFishing"
+
+melt_4ct_GF = melt(GF4ct_Results,id.vars = 'seed', measure.vars=c("FDR","sen", "F1"))
+melt_4ct_GF$source = "S2: GeneFishing"
+
+melt_4ct_v2_GF = melt(GF4ct_v2_Results,id.vars = 'seed', measure.vars=c("FDR","sen", "F1"))
+melt_4ct_v2_GF$source = "S3: GeneFishing"
+
+melt_8ct =  melt(Simulation8ct_Results, id.vars='seed', 
+                measure.vars=c("FDR","sen", "F1"))
+melt_8ct$source = "S4: B-Lightning"
+
+melt_8ct_traditional =  melt(Tradition8ct_Results, id.vars='seed', 
+                measure.vars=c("FDR","sen", "F1"))
+melt_8ct_traditional$source = "S4: DGE"
+
+melt_8ct_GF =  melt(GF8ct_Results, id.vars='seed', 
+                measure.vars=c("FDR","sen", "F1"))
+melt_8ct_GF$source = "S4: GeneFishing"
+
+
+
+
+melt = rbind(melt_1ct,melt_1ct_traditional,melt_1ct_GF,melt_4ct,melt_4ct_traditional,melt_4ct_GF,melt_4ct_v2,melt_4ct_v2_traditional,melt_4ct_v2_GF,melt_8ct,melt_8ct_traditional,melt_8ct_GF)
+
+melt$xlabs[melt$variable == "FDR"] = "FDR"
+melt$xlabs[melt$variable == "sen"] = "Sensitivity"
+melt$xlabs[melt$variable == "F1"] = "F1"
+melt$method = substring(melt$source,4)
+
+```
+```{r Fig.2e boxplots facet}
+melt$facet = substring(melt$source,1,2)
+
+#jpeg("simulations_boxplots.jpeg", width=25,height=25,units="cm",res=300)
+melt  %>% 
+ggplot() + facet_wrap(~ facet,ncol = 2) +
+geom_boxplot(aes(x=factor(xlabs,level=c('FDR', 'Sensitivity','F1')), y=value, color = method),position = position_dodge2(preserve = "single"),width = 0.7,lwd = 1.1)  +
+  theme_minimal() + xlab("") + theme(legend.position="bottom") +ylab("")+
+  #scale_fill_manual(values=c( "#FFB300",  "#7CB342","#64B5F6")) + 
+  scale_colour_manual(values=c( "#FF6F00",  "#7CB342","#64B5F6")) +
+  theme(strip.background = element_blank(), strip.text = element_text(size = 20,face = "bold"),
+        axis.title.x = element_text(size = 20,face = "bold"),
+  axis.text.y = element_text(size = 15,face = "bold"),
+  axis.title.y = element_text(size = 20,face = "bold"),
+  axis.text.x = element_text(size = 18,face = "bold"),
+  legend.title=element_text(size=20,face = "bold"), 
+    legend.text=element_text(size=18,face = "bold")) + labs(color = "") + guides(colour = guide_legend(override.aes = list(size=10)))
+#dev.off()
+
+```
+

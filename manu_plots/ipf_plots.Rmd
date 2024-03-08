@@ -1,0 +1,169 @@
+---
+title: "ipf_plots"
+output: html_document
+date: "2024-03-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r library and B-Lightning functions loading}
+library('hdf5r')
+library('Seurat')
+options(Seurat.object.assay.version = 'v3')
+library('limma')
+library('cluster')
+library('dplyr')
+library('patchwork')#,lib.loc = "/admin/apps/rhel8/R-4.1.1/lib64/R/library")
+library('stats')
+library('Rcpp')
+library('reticulate')#,lib.loc = "/admin/apps/rhel8/R-4.1.1/lib64/R/library")
+library('MASS')
+#library('corpcor')
+library('RcppArmadillo')#,lib.loc = "/admin/apps/rhel8/R-4.1.1/lib64/R/library")
+library('MAST')
+library('GSVA')
+library(ggplot2)
+source("~/Misc/B-Lightning/BLightning_code/BLightning.R")
+sourceCpp("~/Misc/B-Lightning/BLightning_code/coexp_arma.cpp")
+sourceCpp("~/Misc/B-Lightning/BLightning_code/EstNull_cpp.cpp")
+source("~/Misc/B-Lightning/BLightning_code/findgenes.R")
+source("~/Misc/B-Lightning/BLightning_code/getcellsgroup.R")
+source("~/Misc/B-Lightning/BLightning_code/getscore.R")
+source("~/Misc/B-Lightning/BLightning_code/quantile_conn.R")
+source("~/Misc/B-Lightning/BLightning_code/quantile_thres.R")
+
+```
+```{r validation dataset loading}
+validation_data = readRDS("~/Misc/B-Lightning/ipf/validation_data_matrix.rds")
+validation_genename = readRDS("~/Misc/B-Lightning/ipf/validation_genename.rds") 
+validation_cellinfo = readRDS("~/Misc/B-Lightning/ipf/validation_cellinfo.rds")
+ciliated_so <- readRDS("~/Misc/B-Lightning/ipf/ciliated_so.rds")
+```
+
+
+```{r Fig.3a Log fold change Known Genes}
+
+ret_ciliated <- readRDS("~/Misc/B-Lightning/ipf/ciliated_BLightning_results_CFS1_cutoff8.rds")
+
+
+valid = readRDS('~/Misc/B-Lightning/ipf/Qi_summaryDt_new_MASTRE.rds')
+validgenes = valid %>% filter(,component == 'H') %>% dplyr::select(,c('Pr(>Chisq)','name'))
+logfc = valid %>% filter(,component == 'logFC') %>% dplyr::select(,c('coef','name'))
+rownames(logfc) = logfc$name
+rownames(validgenes) = validgenes$name
+validgenes = merge(validgenes,logfc,by = 'name')
+validgenes = validgenes %>% filter(,`Pr(>Chisq)` < 0.05)
+#check
+logfc %>% filter(,name %in% c(ret_ciliated[[4]]))
+logfc %>% filter(,name %in% c(ret_ciliated[[5]]))
+
+
+
+
+df.logfc = logfc %>% filter(,name %in% c(ret_ciliated[[4]],ret_ciliated[[5]]))
+df.logfc$group[df.logfc$coef<0] = "Downregulated"
+df.logfc$group[df.logfc$coef>0] = "Upregulated"
+df.logfc$pred[df.logfc$name %in% ret_ciliated[[4]]] = "Upregulated"
+df.logfc$pred[df.logfc$name %in% ret_ciliated[[5]]] = "Downregulated"
+df.logfc = df.logfc[order(df.logfc$group),]
+temp = validgenes %>% filter(,name %in% c(ret_ciliated[[4]],ret_ciliated[[5]])) %>% dplyr::select(,c(name,`Pr(>Chisq)`))
+
+df.logfc = merge(temp,df.logfc,by = 'name')
+temp = df.logfc %>% filter(,`Pr(>Chisq)` > 1e-4) %>% mutate(,name = paste(name,"*"))
+temp2 = df.logfc %>%filter(,`Pr(>Chisq)` < 1e-4) %>%  filter(,`Pr(>Chisq)` >1e-6) %>% mutate(,name = paste(name,"**"))
+temp3 = df.logfc %>%filter(,`Pr(>Chisq)` < 1e-6)  %>% mutate(,name = paste(name,"***"))
+df.logfc = rbind(temp,temp2,temp3)
+#df.logfc$name[df.logfc$`Pr(>Chisq)` < 0.01]= paste(df.logfc$name,"***")
+#df.logfc$name[df.logfc$`Pr(>Chisq)` > 0.01]= paste(df.logfc$name,"**")
+
+
+jpeg("135893validated_old_logfc.jpeg", width=30,height=15,units="cm",res=300)
+ggplot(df.logfc, aes(fill=group, y=coef,x = as.factor(name))) + 
+  geom_bar(stat="identity") + 
+  ylab("LogFC") + 
+  xlab("Genes") +  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1,size = 20,face = "bold"),panel.background = element_rect(fill = "white", colour = "grey50"),
+                         axis.text.y = element_text(size = 20,face = "bold"),
+                         axis.title.x = element_text(size = 20,face = "bold"),
+                         axis.title.y = element_text(size = 20,face = "bold"),
+                         legend.title=element_text(size=20,face = "bold"), 
+    legend.text=element_text(size=18,face = "bold"),
+    plot.title = element_text(size = 22, face = "bold")) + scale_fill_manual("Expression Level",values = c("#F8766D","#00aedb"),breaks=c('Upregulated', 'Downregulated')) + scale_y_continuous(limits=c(-2,6)) + ggtitle("Log Fold Change of Input Gene Markers")
+dev.off()
+```
+
+```{r FIg.3b log fold change New genes}
+df.logfc = logfc %>% filter(,name %in% c(ret_ciliated[[2]],ret_ciliated[[3]]))
+df.logfc$group[df.logfc$coef<0] = "Downregulated"
+df.logfc$group[df.logfc$coef>0] = "Upregulated"
+df.logfc$pred[df.logfc$name %in% ret_ciliated[[2]]] = "Upregulated"
+df.logfc$pred[df.logfc$name %in% ret_ciliated[[3]]] = "Downregulated"
+df.logfc = df.logfc[order(df.logfc$group),]
+temp = validgenes %>% filter(,name %in% c(ret_ciliated[[2]],ret_ciliated[[3]])) %>% dplyr::select(,c(name,`Pr(>Chisq)`))
+
+df.logfc = merge(temp,df.logfc,by = 'name')
+temp = df.logfc %>% filter(,`Pr(>Chisq)` > 1e-4) %>% mutate(,name = paste(name,"*"))
+temp2 = df.logfc %>%filter(,`Pr(>Chisq)` < 1e-4) %>%  filter(,`Pr(>Chisq)` >1e-6) %>% mutate(,name = paste(name,"**"))
+temp3 = df.logfc %>%filter(,`Pr(>Chisq)` < 1e-6)  %>% mutate(,name = paste(name,"***"))
+df.logfc = rbind(temp,temp2,temp3)
+#df.logfc$name[df.logfc$`Pr(>Chisq)` < 0.01]= paste(df.logfc$name,"***")
+#df.logfc$name[df.logfc$`Pr(>Chisq)` > 0.01]= paste(df.logfc$name,"**")
+df.logfc$verified = df.logfc$pred == df.logfc$group
+
+jpeg("135893validated_verified_regulation_logfc.jpeg", width=30,height=15,units="cm",res=300)
+ggplot(df.logfc %>% filter(verified == T), aes(fill=group, y=coef,x = as.factor(name))) + 
+  geom_bar(stat="identity") + 
+  ylab("LogFC") + 
+  xlab("Genes") +  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1,size = 20,face = "bold"),panel.background = element_rect(fill = "white", colour = "grey50"),
+                         axis.text.y = element_text(size = 20,face = "bold"),
+                         axis.title.x = element_text(size = 20,face = "bold"),
+                         axis.title.y = element_text(size = 20,face = "bold"),
+                         legend.title=element_text(size=20,face = "bold"), 
+    legend.text=element_text(size=18,face = "bold"),
+    plot.title = element_text(size = 22, face = "bold")) + scale_fill_manual("Expression Level",values = c("#F8766D","#00aedb"),breaks=c('Upregulated', 'Downregulated')) + scale_y_continuous(limits=c(-2,6)) +  ggtitle("Log Fold Change of Verified New Gene Markers")
+dev.off()
+```
+
+```{r}
+s.genes = cc.genes.updated.2019$s.genes
+g2m.genes = cc.genes.updated.2019$g2m.genes
+
+ciliated_so <- CellCycleScoring(ciliated_so, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+
+CFS2_0 = getscore("CFS1",ret_ciliated[[4]],ret_ciliated[[5]],
+                        ciliated_so@assays$RNA@counts[c(ret_ciliated[[4]],ret_ciliated[[5]]),])
+
+CFS2_1 = getscore("CFS1",df.logfc$name[df.logfc$group == "Upregulated" & df.logfc$verified == T],df.logfc$name[df.logfc$group == "Downregulated"& df.logfc$verified == T],
+                        ciliated_so@assays$RNA@counts[c(ret_ciliated[[2]],ret_ciliated[[3]]),])
+
+CFS2_2 = getscore("CFS1",c(df.logfc$name[df.logfc$group == "Upregulated"& df.logfc$verified == T],ret_ciliated[[4]]),c(df.logfc$name[df.logfc$group == "Downregulated"& df.logfc$verified == T],ret_ciliated[[5]]),
+                        ciliated_so@assays$RNA@counts[c(ret_ciliated[[2]],ret_ciliated[[4]],ret_ciliated[[3]],ret_ciliated[[5]]),])
+
+ciliated_df = as.data.frame(ciliated_so@meta.data)
+ciliated_df$CFS1_0 = CFS2_0
+ciliated_df$CFS1_1 = CFS2_1
+ciliated_df$CFS1_2 = CFS2_2
+save(ciliated_df,file = "~/ciliated_verified_df.RData")
+
+```
+
+```{r}
+old_ret_ciliated = Markers
+
+CFS1_0 = getscore("CFS1",old_ret_ciliated[[2]],old_ret_ciliated[[4]],
+                        ciliated_so@assays$RNA@counts[c(old_ret_ciliated[[2]],old_ret_ciliated[[4]]),])
+
+CFS1_1 = getscore("CFS1",old_ret_ciliated[[1]],old_ret_ciliated[[3]],
+                        ciliated_so@assays$RNA@counts[c(old_ret_ciliated[[1]],old_ret_ciliated[[3]]),])
+
+CFS1_2 = getscore("CFS1",c(old_ret_ciliated[[1]],old_ret_ciliated[[2]]),c(old_ret_ciliated[[3]],old_ret_ciliated[[4]]),
+                        ciliated_so@assays$RNA@counts[c(old_ret_ciliated[[1]],old_ret_ciliated[[2]],old_ret_ciliated[[3]],old_ret_ciliated[[4]]),])
+
+old_ciliated_df = as.data.frame(ciliated_so@meta.data)
+old_ciliated_df$CFS1_0 = CFS1_0
+old_ciliated_df$CFS1_1 = CFS1_1
+old_ciliated_df$CFS1_2 = CFS1_2
+save(old_ciliated_df,file = "~/old_ciliated_df.RData")
+```
+
+

@@ -1,0 +1,1934 @@
+---
+title: "COVID_plots"
+output: html_document
+date: "2024-03-03"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(rhdf5)
+library(Matrix)
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library('limma')
+library('cluster')
+library('dplyr')
+library('patchwork')
+library('stats')
+library('Rcpp')
+library('reticulate')
+library('MASS')
+library('corpcor')
+library(ggplot2)
+library('RcppArmadillo')
+library('MAST')
+source("~/Misc/B-Lightning/seurat_functions.R")
+source("~/Misc/B-Lightning/BLightning_code/BLightning.R")
+sourceCpp("~/Misc/B-Lightning/BLightning_code/coexp_arma.cpp")
+sourceCpp("~/Misc/B-Lightning/BLightning_code/EstNull_cpp.cpp")
+source("~/Misc/B-Lightning/BLightning_code/findgenes.R")
+source("~/Misc/B-Lightning/BLightning_code/getcellsgroup.R")
+source("~/Misc/B-Lightning/BLightning_code/getscore.R")
+source("~/Misc/B-Lightning/BLightning_code/quantile_conn.R")
+source("~/Misc/B-Lightning/BLightning_code/quantile_thres.R")
+
+```
+#COVID 74-year-old female Airway 
+
+### CD8 only
+###CD8 effector
+```{r}
+covid_74_cd8_so = readRDS("~/Misc/B-Lightning/COVID_longitudinal/covid_74_cd8_so.rds")
+
+ret_effectorcd8 = readRDS("~/Misc/B-Lightning/COVID_longitudinal/NEW_effectorcd8_BLightning_results_CFS1_cutoff3.rds")
+
+cscore = 'CFS1'
+nown.effector.upregulated.markers = c("GZMB","PRF1","IFNG","TNF","IL2RA","TBX21")
+known.effector.downregulated.markers = c("CCR7","SELL")
+```
+```{r}
+
+effectorscore0 = getscore(cscore,known.effector.upregulated.markers,known.effector.downregulated.markers,
+                        covid_74_cd8_so@assays$RNA@counts[c(known.effector.upregulated.markers,known.effector.downregulated.markers),])
+
+effectorscore1 = getscore(cscore,ret_effectorcd8[[2]],ret_effectorcd8[[3]],
+                        covid_74_cd8_so@assays$RNA@counts[c(ret_effectorcd8[[2]],ret_effectorcd8[[3]]),])
+
+effectorscore2 = getscore(cscore,c(known.effector.upregulated.markers,ret_effectorcd8[[2]]),c(known.effector.downregulated.markers,ret_effectorcd8[[3]]),
+                        covid_74_cd8_so@assays$RNA@counts[c(known.effector.upregulated.markers,ret_effectorcd8[[2]],known.effector.downregulated.markers,ret_effectorcd8[[3]]),])
+
+cd8_df = as.data.frame(effectorscore0)
+cd8_df$effectorscore1 = effectorscore1
+cd8_df$effectorscore2 = effectorscore2
+
+
+cd8_metadata = covid_74_cd8_so@meta.data
+cd8_metadata = cd8_metadata[rownames(cd8_df),]
+cd8_df$days_post_intubation=cd8_metadata$days_post_intubation
+cd8_df$days_post_intubation = paste("Day",cd8_df$days_post_intubation)
+```
+
+```{r Supplementary Fig 3d-h}
+
+cd8_df$cellname = rownames(cd8_df)
+cd8_df_selected = cd8_df %>%
+  group_by(days_post_intubation) %>%
+  filter(effectorscore2 > 0.675)
+
+vln_df = data.frame(PDCD1 = covid_74_cd8_so[["RNA"]]@counts["PDCD1",cd8_df_selected$cellname], cluster = cd8_df_selected$days_post_intubation,TIM3 = covid_74_cd8_so[["RNA"]]@counts["HAVCR2",cd8_df_selected$cellname],
+                    LAG3 = covid_74_cd8_so[["RNA"]]@counts["LAG3",cd8_df_selected$cellname],
+                    ENTPD1 = covid_74_cd8_so[["RNA"]]@counts["ENTPD1",cd8_df_selected$cellname],
+                    CTLA4 = covid_74_cd8_so[["RNA"]]@counts["CTLA4",cd8_df_selected$cellname])
+VlnPlot(covid_74_cd8_so[,cd8_df_selected$cellname], features = "ENTPD1",group.by = "days_post_intubation",layer = 'counts' ) + theme_minimal() + ggtitle("") + theme(plot.title = element_text(size = 24, face = "bold")) + labs(x = "Days Post Intubation",fill = "") + 
+  theme(axis.text.x = element_text(hjust=1,size = 24),
+        axis.text.y = element_text(hjust=1,size = 24),
+        axis.title.y = element_text(size = 30,face = "bold"),
+        axis.title.x = element_text(size = 30,face = "bold"),
+        legend.title = element_text(size=24,face = "bold"), #change legend title font size
+        legend.text = element_text(size=24,face = "bold")) + theme(strip.text.x = element_text(size = 36,face = 'bold'))  + scale_fill_manual(values = rep("#69b3a2",7)) + NoLegend()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD8effector_PD1_bydays.jpeg",width=30,height=20,units="cm",res=300)
+ggplot(vln_df, aes(x = cluster, y = PDCD1)) + geom_violin(aes(fill = cluster), trim=TRUE, scale = "width",colour = "#4f845c") + theme_minimal() + ggtitle("") + theme(plot.title = element_text(size = 24, face = "bold")) + labs(x = "Days Post Intubation",fill = "") + 
+  theme(axis.text.x = element_text(hjust=1,size = 30,angle = 45),
+        axis.text.y = element_text(hjust=1,size = 30),
+        axis.title.y = element_text(size = 36,face = "bold"),
+        axis.title.x = element_text(size = 36,face = "bold"),
+        legend.title = element_text(size=24,face = "bold"), #change legend title font size
+        legend.text = element_text(size=24,face = "bold")) + theme(strip.text.x = element_text(size = 36,face = 'bold'))  + scale_fill_manual(values = rep("#9fba95",7)) + NoLegend() 
+dev.off()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD8effector_TM3_bydays.jpeg",width=30,height=20,units="cm",res=300)
+ggplot(vln_df, aes(x = cluster, y = TIM3)) + geom_violin(aes(fill = cluster), trim=TRUE, scale = "width",,colour = "#4f845c") + theme_minimal() + ggtitle("") + theme(plot.title = element_text(size = 24, face = "bold")) + labs(x = "Days Post Intubation",fill = "") + 
+  theme(axis.text.x = element_text(hjust=1,size = 30,angle = 45),
+        axis.text.y = element_text(hjust=1,size = 30),
+        axis.title.y = element_text(size = 36,face = "bold"),
+        axis.title.x = element_text(size = 36,face = "bold"),
+        legend.title = element_text(size=24,face = "bold"), #change legend title font size
+        legend.text = element_text(size=24,face = "bold")) + theme(strip.text.x = element_text(size = 36,face = 'bold'))  + scale_fill_manual(values = rep("#9fba95",7)) + NoLegend() 
+dev.off()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD8effector_CTLA4_bydays.jpeg",width=30,height=20,units="cm",res=300)
+ggplot(vln_df, aes(x = cluster, y = CTLA4)) + geom_violin(aes(fill = cluster), trim=TRUE, scale = "width",,colour = "#4f845c") + theme_minimal() + ggtitle("") + theme(plot.title = element_text(size = 24, face = "bold")) + labs(x = "Days Post Intubation",fill = "") + 
+  theme(axis.text.x = element_text(hjust=1,size = 30,angle = 45),
+        axis.text.y = element_text(hjust=1,size = 30),
+        axis.title.y = element_text(size = 36,face = "bold"),
+        axis.title.x = element_text(size = 36,face = "bold"),
+        legend.title = element_text(size=24,face = "bold"), #change legend title font size
+        legend.text = element_text(size=24,face = "bold")) + theme(strip.text.x = element_text(size = 36,face = 'bold'))  + scale_fill_manual(values = rep("#9fba95",7)) + NoLegend() 
+dev.off()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD8effector_LAG3_bydays.jpeg",width=30,height=20,units="cm",res=300)
+ggplot(vln_df, aes(x = cluster, y = LAG3)) + geom_violin(aes(fill = cluster), trim=TRUE, scale = "width",,colour = "#4f845c") + theme_minimal() + ggtitle("") + theme(plot.title = element_text(size = 24, face = "bold")) + labs(x = "Days Post Intubation",fill = "") + 
+  theme(axis.text.x = element_text(hjust=1,size = 30,angle = 45),
+        axis.text.y = element_text(hjust=1,size = 30),
+        axis.title.y = element_text(size = 36,face = "bold"),
+        axis.title.x = element_text(size = 36,face = "bold"),
+        legend.title = element_text(size=24,face = "bold"), #change legend title font size
+        legend.text = element_text(size=24,face = "bold")) + theme(strip.text.x = element_text(size = 36,face = 'bold'))  + scale_fill_manual(values = rep("#9fba95",7)) + NoLegend() 
+dev.off()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD8effector_ENTPD1_bydays.jpeg",width=30,height=20,units="cm",res=300)
+ggplot(vln_df, aes(x = cluster, y = ENTPD1)) + geom_violin(aes(fill = cluster), trim=TRUE, scale = "width",,colour = "#4f845c") + theme_minimal() + ggtitle("") + theme(plot.title = element_text(size = 24, face = "bold")) + labs(x = "Days Post Intubation",fill = "") + 
+  theme(axis.text.x = element_text(hjust=1,size = 30,angle = 45),
+        axis.text.y = element_text(hjust=1,size = 30),
+        axis.title.y = element_text(size = 36,face = "bold"),
+        axis.title.x = element_text(size = 36,face = "bold"),
+        legend.title = element_text(size=24,face = "bold"), #change legend title font size
+        legend.text = element_text(size=24,face = "bold")) + theme(strip.text.x = element_text(size = 36,face = 'bold'))  + scale_fill_manual(values = rep("#9fba95",7)) + NoLegend() 
+dev.off()
+```
+```{r Supplementary Fig 3b}
+cd8_dummy <- cd8_df %>%
+  group_by(days_post_intubation) %>%
+  summarize(effectorscore0.mean = median(effectorscore0),effectorscore1.mean = median(effectorscore1),effectorscore2.mean = median(effectorscore2))
+
+cd8_df$group = cd8_df$effectorscore1 >0.675
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD8_effectorscore1_bydays.jpeg",width=60,height=30,units="cm",res=300)
+ggplot(data = cd8_df, aes(x=effectorscore1))  +labs(x = "",y = "Density") +
+  geom_density(lwd = 2.5, linetype = "dashed",aes(x = effectorscore0),colour = c("#575757") )+ 
+  geom_density(lwd = 3.5, linetype = 1,aes(x=effectorscore1),colour = c("#2b6a99"))+ 
+  facet_wrap( ~ days_post_intubation,nrow = 2) + 
+  geom_vline(data=cd8_dummy, aes(xintercept=effectorscore1.mean),colour = c("#2b6a99"),lwd = 3, linetype = 1) +
+  geom_vline(data=cd8_dummy, lwd = 2.3,aes(xintercept=effectorscore0.mean), color = c("#575757"), linetype="dashed") +
+  #scale_color_manual(values = c("#D55E00","#E69F00","#F0E442","#009E73","#56B4E9","#0072B2","#CC79A7"),name = "Days Post Intubation") +
+  theme_minimal() + ggtitle("Effector CFS") + theme(plot.title = element_text(size = 36, face = "bold")) + 
+  theme(axis.text.x = element_text(hjust=1,size = 18),
+        axis.text.y = element_text(hjust=1,size = 24),
+        axis.title.y = element_text(size = 36,face = "bold"),
+        legend.title = element_text(size=24,face = "bold"), #change legend title font size
+        legend.text = element_text(size=24,face = "bold")) + theme(strip.text.x = element_text(size = 40,face = 'bold')) + geom_segment(aes(x = 0.675, y = 0, xend = 0.675, yend = 2),color = "#f16c23",lwd = 4,linetype = "dashed")
+dev.off()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD8_effectorscore2_bydays.jpeg",width=60,height=30,units="cm",res=300)
+ggplot(data = cd8_df, aes(x=effectorscore2))  +labs(x = "",y = "Density") +
+  geom_density(lwd = 2.5, linetype = "dashed",aes(x = effectorscore0),colour = c("#575757") )+ 
+  geom_density(lwd = 3.5, linetype = 1,aes(x=effectorscore2),colour = c("#2b6a99"))+ 
+  facet_wrap( ~ days_post_intubation,nrow = 2) + 
+  geom_vline(data=cd8_dummy, aes(xintercept=effectorscore2.mean),colour = c("#2b6a99"),lwd = 3, linetype = 1) +
+  geom_vline(data=cd8_dummy, lwd = 2.3,aes(xintercept=effectorscore0.mean), color = c("#575757"), linetype="dashed") +
+  #scale_color_manual(values = c("#D55E00","#E69F00","#F0E442","#009E73","#56B4E9","#0072B2","#CC79A7"),name = "Days Post Intubation") +
+  theme_minimal() + ggtitle("Effector CFS") + theme(plot.title = element_text(size = 36, face = "bold")) + 
+  theme(axis.text.x = element_text(hjust=1,size = 18),
+        axis.text.y = element_text(hjust=1,size = 24),
+        axis.title.y = element_text(size = 36,face = "bold"),
+        legend.title = element_text(size=24,face = "bold"), #change legend title font size
+        legend.text = element_text(size=24,face = "bold")) + theme(strip.text.x = element_text(size = 40,face = 'bold')) + geom_segment(aes(x = 0.675, y = 0, xend = 0.675, yend = 2),color = "#f16c23",lwd = 4,linetype = "dashed")
+dev.off()
+```
+
+### CD8 memory
+
+```{r}
+ret_memorycd8 = readRDS("~/Misc/B-Lightning/COVID_longitudinal/NEW_memorycd8_BLightning_results_CFS1_cutoff4.rds")
+
+known.memory.upregulated.markers = c("CD27","CD28","PTPRC","SELL","CCR7","BCL2","IL7R","CXCR3","EOMES","ID3")
+known.memory.upregulated.markers = known.memory.upregulated.markers[known.memory.upregulated.markers %in% rownames(covid_74_cd8_so)]
+known.memory.downregulated.markers = c()
+
+```
+
+```{r}
+
+memoryscore0 = getscore(cscore,known.memory.upregulated.markers,known.memory.downregulated.markers,
+                        covid_74_cd8_so@assays$RNA@counts[c(known.memory.upregulated.markers,known.memory.downregulated.markers),])
+
+memoryscore1 = getscore(cscore,ret_memorycd8[[2]],ret_memorycd8[[3]],
+                        covid_74_cd8_so@assays$RNA@counts[c(ret_memorycd8[[2]],ret_memorycd8[[3]]),])
+
+memoryscore2 = getscore(cscore,c(known.memory.upregulated.markers,ret_memorycd8[[2]]),c(known.memory.downregulated.markers,ret_memorycd8[[3]]),
+                        covid_74_cd8_so@assays$RNA@counts[c(known.memory.upregulated.markers,ret_memorycd8[[2]],known.memory.downregulated.markers,ret_memorycd8[[3]]),])
+
+cd8_df$memoryscore0 = memoryscore0
+cd8_df$memoryscore1 = memoryscore1
+cd8_df$memoryscore2 = memoryscore2
+```
+
+```{r Supplementary Fig 3a}
+cd8_dummy <- cd8_df %>%
+  group_by(days_post_intubation) %>%
+  summarize(memoryscore0.mean = median(memoryscore0),memoryscore1.mean = median(memoryscore1),memoryscore2.mean = median(memoryscore2))
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD8_memoryscore1_bydays.jpeg",width=60,height=30,units="cm",res=300)
+
+ggplot(data = cd8_df, aes(x=memoryscore1))  +labs(x = "",y = "Density") +
+  geom_density(lwd = 2.5, linetype = "dashed",aes(x = memoryscore0),colour = c("#575757") )+ 
+  geom_density(lwd = 3.5, linetype = 1,aes(x=memoryscore1),colour = c("#2b6a99"))+ 
+  facet_wrap( ~ days_post_intubation,nrow = 2) + 
+  geom_vline(data=cd8_dummy, aes(xintercept=memoryscore1.mean),colour = c("#2b6a99"),lwd = 3, linetype = 1) +
+  geom_vline(data=cd8_dummy, lwd = 2.3,aes(xintercept=memoryscore0.mean), color = c("#575757"), linetype="dashed") +
+  #scale_color_manual(values = c("#D55E00","#E69F00","#F0E442","#009E73","#56B4E9","#0072B2","#CC79A7"),name = "Days Post Intubation") +
+  theme_minimal() + ggtitle("Memory CFS") + theme(plot.title = element_text(size = 36, face = "bold")) + 
+  theme(axis.text.x = element_text(hjust=1,size = 18),
+        axis.text.y = element_text(hjust=1,size = 24),
+        axis.title.y = element_text(size = 36,face = "bold"),
+        legend.title = element_text(size=24,face = "bold"), #change legend title font size
+        legend.text = element_text(size=24,face = "bold")) + theme(strip.text.x = element_text(size = 40,face = 'bold')) 
+dev.off()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD8_memoryscore2_bydays.jpeg",width=60,height=30,units="cm",res=300)
+
+ggplot(data = cd8_df, aes(x=memoryscore2))  +labs(x = "",y = "Density") +
+  geom_density(lwd = 2.5, linetype = "dashed",aes(x = memoryscore0),colour = c("#575757") )+ 
+  geom_density(lwd = 3.5, linetype = 1,aes(x=memoryscore2),colour = c("#2b6a99"))+ 
+  facet_wrap( ~ days_post_intubation,nrow = 2) + 
+  geom_vline(data=cd8_dummy, aes(xintercept=memoryscore2.mean),colour = c("#2b6a99"),lwd = 3, linetype = 1) +
+  geom_vline(data=cd8_dummy, lwd = 2.3,aes(xintercept=memoryscore0.mean), color = c("#575757"), linetype="dashed") +
+  #scale_color_manual(values = c("#D55E00","#E69F00","#F0E442","#009E73","#56B4E9","#0072B2","#CC79A7"),name = "Days Post Intubation") +
+  theme_minimal() + ggtitle("Memory CFS") + theme(plot.title = element_text(size = 36, face = "bold")) + 
+  theme(axis.text.x = element_text(hjust=1,size = 18),
+        axis.text.y = element_text(hjust=1,size = 24),
+        axis.title.y = element_text(size = 36,face = "bold"),
+        legend.title = element_text(size=24,face = "bold"), #change legend title font size
+        legend.text = element_text(size=24,face = "bold")) + theme(strip.text.x = element_text(size = 40,face = 'bold')) 
+dev.off()
+
+```
+
+```{r Supplementary Fig 2a-e}
+cd8_df$UMAP1 = as.data.frame(covid_74_cd8_so@reductions$umap@cell.embeddings)$umap_1
+cd8_df$UMAP2 = as.data.frame(covid_74_cd8_so@reductions$umap@cell.embeddings)$umap_2
+cd8_df$PDCD1 = covid_74_cd8_so@assays$RNA@counts['PDCD1',] %>% as.vector()
+
+cd8_df %>% ggplot() + geom_point(aes(x = UMAP1, y = UMAP2,colour = PDCD1, size = 3))
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD8_UMAP.jpeg",width=30,height=25,units="cm",res=300)
+cd8_df %>% ggplot() + geom_point(aes(x = UMAP1, y = UMAP2,colour = days_post_intubation), size = 3)+ scale_color_manual(values = c("#D55E00","#E69F00","#009E73","#56B4E9","#0072B2","#CC79A7","purple"),name = "Days Post Intubation") + theme_minimal() + 
+  theme(axis.text.x = element_text(hjust=1,size = 22),
+        axis.text.y = element_text(hjust=1,size = 22),
+        axis.title.x = element_text(size = 28,face = "bold"),
+        axis.title.y = element_text(size = 28,face = "bold"),
+        legend.title = element_text(size=28,face = "bold"), #change legend title font size
+        legend.text = element_text(size=28,face = 'bold')) 
+dev.off()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD8_UMAP_coloredbyeffectorscore0.jpeg",width=30,height=25,units="cm",res=300)
+cd8_df %>% arrange(effectorscore0) %>% ggplot() + geom_point(aes(x = UMAP1, y = UMAP2,colour = rank(effectorscore0)/dim(cd8_df)[1]),alpha = 7/10,size = 3)+ scale_colour_gradientn(limits=c(0, 1),breaks=seq(0,1,by=0.25),colours = colorRamps::blue2red(10),name = "Rank/N") + theme_minimal()+ 
+  theme(axis.text.x = element_text(hjust=1,size = 22),
+        axis.text.y = element_text(hjust=1,size = 22),
+        axis.title.x = element_text(size = 28,face = "bold"),
+        axis.title.y = element_text(size = 28,face = "bold"),
+        legend.title = element_text(size=28,face = "bold"), #change legend title font size
+        legend.text = element_text(size=28,face = "bold"))
+dev.off()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD8_UMAP_coloredbyeffectorscore1.jpeg",width=30,height=25,units="cm",res=300)
+cd8_df %>% arrange(effectorscore1) %>% ggplot() + geom_point(aes(x = UMAP1, y = UMAP2,colour = rank(effectorscore1)/dim(cd8_df)[1]),alpha = 7/10,size = 3)+ scale_colour_gradientn(limits=c(0, 1),breaks=seq(0,1,by=0.25),colours = colorRamps::blue2red(10),name = "Rank/N") + theme_minimal()+ 
+  theme(axis.text.x = element_text(hjust=1,size = 22),
+        axis.text.y = element_text(hjust=1,size = 22),
+        axis.title.x = element_text(size = 28,face = "bold"),
+        axis.title.y = element_text(size = 28,face = "bold"),
+        legend.title = element_text(size=28,face = "bold"), #change legend title font size
+        legend.text = element_text(size=28,face = "bold"))
+dev.off()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD8_UMAP_coloredbyeffectorscore2.jpeg",width=30,height=25,units="cm",res=300)
+cd8_df %>% arrange(effectorscore2) %>% ggplot() + geom_point(aes(x = UMAP1, y = UMAP2,colour = rank(effectorscore2)/dim(cd8_df)[1]),alpha = 7/10,size = 3)+ scale_colour_gradientn(limits=c(0, 1),breaks=seq(0,1,by=0.25),colours = colorRamps::blue2red(10),name = "Rank/N") + theme_minimal()+ 
+  theme(axis.text.x = element_text(hjust=1,size = 22),
+        axis.text.y = element_text(hjust=1,size = 22),
+        axis.title.x = element_text(size = 28,face = "bold"),
+        axis.title.y = element_text(size = 28,face = "bold"),
+        legend.title = element_text(size=28,face = "bold"), #change legend title font size
+        legend.text = element_text(size=28,face = "bold"))
+dev.off()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD8_UMAP_coloredbymemoryscore0.jpeg",width=30,height=25,units="cm",res=300)
+cd8_df %>% arrange(memoryscore0) %>% ggplot() + geom_point(aes(x = UMAP1, y = UMAP2,colour = rank(memoryscore0)/dim(cd8_df)[1]),alpha = 7/10,size = 3)+ scale_colour_gradientn(limits=c(0, 1),breaks=seq(0,1,by=0.25),colours = colorRamps::blue2red(10),name = "Rank/N") + theme_minimal()+ 
+  theme(axis.text.x = element_text(hjust=1,size = 22),
+        axis.text.y = element_text(hjust=1,size = 22),
+        axis.title.x = element_text(size = 28,face = "bold"),
+        axis.title.y = element_text(size = 28,face = "bold"),
+        legend.title = element_text(size=28,face = "bold"), #change legend title font size
+        legend.text = element_text(size=28,face = "bold"))
+dev.off()
+
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD8_UMAP_coloredbymemoryscore1.jpeg",width=30,height=25,units="cm",res=300)
+cd8_df %>% arrange(memoryscore1) %>% ggplot() + geom_point(aes(x = UMAP1, y = UMAP2,colour = rank(memoryscore1)/dim(cd8_df)[1]),alpha = 7/10,size = 3)+ scale_colour_gradientn(limits=c(0, 1),breaks=seq(0,1,by=0.25),colours = colorRamps::blue2red(10),name = "Rank/N") + theme_minimal()+ 
+  theme(axis.text.x = element_text(hjust=1,size = 22),
+        axis.text.y = element_text(hjust=1,size = 22),
+        axis.title.x = element_text(size = 28,face = "bold"),
+        axis.title.y = element_text(size = 28,face = "bold"),
+        legend.title = element_text(size=28,face = "bold"), #change legend title font size
+        legend.text = element_text(size=28,face = "bold"))
+dev.off()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD8_UMAP_coloredbymemoryscore2.jpeg",width=30,height=25,units="cm",res=300)
+cd8_df %>% arrange(memoryscore2) %>% ggplot() + geom_point(aes(x = UMAP1, y = UMAP2,colour = rank(memoryscore2)/dim(cd8_df)[1]),alpha = 7/10,size = 3)+ scale_colour_gradientn(limits=c(0, 1),breaks=seq(0,1,by=0.25),colours = colorRamps::blue2red(10),name = "Rank/N") + theme_minimal()+ 
+ theme(axis.text.x = element_text(hjust=1,size = 22),
+        axis.text.y = element_text(hjust=1,size = 22),
+        axis.title.x = element_text(size = 28,face = "bold"),
+        axis.title.y = element_text(size = 28,face = "bold"),
+        legend.title = element_text(size=28,face = "bold"), #change legend title font size
+        legend.text = element_text(size=28,face = "bold"))
+dev.off()
+```
+```{r Supplementary Fig 3c}
+library(ggpmisc)
+library(ggpubr)
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD8_memory0_vs_effector0.jpeg",width=60,height=25,units="cm",res=300)
+ggplot(data = cd8_df, aes(x=memoryscore0,y = effectorscore0))+ 
+  geom_point(colour = c("#4f845c"),size = 3)+  geom_smooth(method = "lm",colour = "black",size = 2) +
+  stat_regline_equation(aes(label = ..rr.label..),size = 10 )+
+  facet_wrap( ~ days_post_intubation,nrow = 2) + 
+  scale_color_manual(values = c("#4f845c"), name = "Days Post Intubation") + xlab("Memory CFS") + ylab("Effector CFS") + 
+  theme_minimal() + theme(plot.title = element_text(size = 24, face = "bold")) + 
+  theme(axis.text.x = element_text(hjust=1,size = 22),
+        axis.text.y = element_text(hjust=1,size = 22),
+        axis.title.x = element_text(size = 36,face = "bold"),
+        axis.title.y = element_text(size = 36,face = "bold"),
+        legend.title = element_text(size=28,face = "bold"), #change legend title font size
+        legend.text = element_text(size=28,face = "bold")) + theme(strip.text.x = element_text(size = 40,face = 'bold'))
+dev.off()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD8_memory1_vs_effector1.jpeg",width=60,height=25,units="cm",res=300)
+ggplot(data = cd8_df, aes(x=memoryscore1,y = effectorscore1))+ 
+  geom_point(colour = c("#4f845c"),size = 3)+  geom_smooth(method = "lm",colour = "black",size = 2) +
+  stat_regline_equation(aes(label = ..rr.label..),size = 10 )+
+  facet_wrap( ~ days_post_intubation,nrow = 2) + 
+  scale_color_manual(values = c("#4f845c"), name = "Days Post Intubation") + xlab("Memory CFS") + ylab("Effector CFS") + 
+  theme_minimal() + theme(plot.title = element_text(size = 24, face = "bold")) + 
+  theme(axis.text.x = element_text(hjust=1,size = 22),
+        axis.text.y = element_text(hjust=1,size = 22),
+        axis.title.x = element_text(size = 36,face = "bold"),
+        axis.title.y = element_text(size = 36,face = "bold"),
+        legend.title = element_text(size=28,face = "bold"), #change legend title font size
+        legend.text = element_text(size=28,face = "bold")) + theme(strip.text.x = element_text(size = 40,face = 'bold'))
+dev.off()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD8_memory2_vs_effector2_noR2.jpeg",width=60,height=25,units="cm",res=300)
+ggplot(data = cd8_df, aes(x=memoryscore2,y = effectorscore2))+ 
+  geom_point(colour = c("#4f845c"),size = 3)+  geom_smooth(method = "lm",colour = "black",size = 2) +
+  #stat_regline_equation(aes(label = ..rr.label..),size = 10 )+
+  facet_wrap( ~ days_post_intubation,nrow = 2) + 
+  scale_color_manual(values = c("#4f845c"), name = "Days Post Intubation") + xlab("Memory CFS") + ylab("Effector CFS") + 
+  theme_minimal() + theme(plot.title = element_text(size = 24, face = "bold")) + 
+  theme(axis.text.x = element_text(hjust=1,size = 22),
+        axis.text.y = element_text(hjust=1,size = 22),
+        axis.title.x = element_text(size = 36,face = "bold"),
+        axis.title.y = element_text(size = 36,face = "bold"),
+        legend.title = element_text(size=28,face = "bold"), #change legend title font size
+        legend.text = element_text(size=28,face = "bold")) + theme(strip.text.x = element_text(size = 40,face = 'bold'))
+dev.off()
+```
+
+
+
+### CD4 only
+
+###CD4 effector
+```{r}
+covid_74_cd4_so = readRDS("~/Misc/B-Lightning/COVID_longitudinal/covid_74_cd4_so.rds")
+ret_effectorcd4 = readRDS("~/Misc/B-Lightning/COVID_longitudinal/NEW_effectorcd4_BLightning_results_CFS1_cutoff3.rds")
+known.effector.upregulated.markers =  c("IFNG","TBX21","GATA3","CXCR3","RORC","TNF")
+known.effector.downregulated.markers = c()
+```
+```{r}
+
+effectorscore0 = getscore(cscore,known.effector.upregulated.markers,known.effector.downregulated.markers,
+                        covid_74_cd4_so@assays$RNA@counts[c(known.effector.upregulated.markers,known.effector.downregulated.markers),])
+
+effectorscore1 = getscore(cscore,ret_effectorcd4[[2]],ret_effectorcd4[[3]],
+                        covid_74_cd4_so@assays$RNA@counts[c(ret_effectorcd4[[2]],ret_effectorcd4[[3]]),])
+
+effectorscore2 = getscore(cscore,c(known.effector.upregulated.markers,ret_effectorcd4[[2]]),c(known.effector.downregulated.markers,ret_effectorcd4[[3]]),
+                        covid_74_cd4_so@assays$RNA@counts[c(known.effector.upregulated.markers,ret_effectorcd4[[2]],known.effector.downregulated.markers,ret_effectorcd4[[3]]),])
+
+cd4_df = as.data.frame(effectorscore0)
+cd4_df$effectorscore1 = effectorscore1
+cd4_df$effectorscore2 = effectorscore2
+
+
+cd4_metadata = covid_74_cd4_so@meta.data
+cd4_metadata = cd4_metadata[rownames(cd4_df),]
+cd4_df$days_post_intubation=cd4_metadata$days_post_intubation
+cd4_df$days_post_intubation = paste("Day",cd4_df$days_post_intubation)
+
+```
+
+```{r Fig 4d-h}
+
+cd4_df$cellname = rownames(cd4_df)
+cd4_df_selected = cd4_df %>%
+  group_by(days_post_intubation) %>%
+  filter(effectorscore2 > 0.8)
+
+vln_df = data.frame(PDCD1 = covid_74_cd4_so[["RNA"]]@counts["PDCD1",cd4_df_selected$cellname], cluster = cd4_df_selected$days_post_intubation,TIM3 = covid_74_cd4_so[["RNA"]]@counts["HAVCR2",cd4_df_selected$cellname],
+                    LAG3 = covid_74_cd4_so[["RNA"]]@counts["LAG3",cd4_df_selected$cellname],
+                    ENTPD1 = covid_74_cd4_so[["RNA"]]@counts["ENTPD1",cd4_df_selected$cellname],
+                    CTLA4 = covid_74_cd4_so[["RNA"]]@counts["CTLA4",cd4_df_selected$cellname])
+
+
+VlnPlot(covid_74_cd4_so[,cd8_df_selected$cellname], features = "ENTPD1",group.by = "days_post_intubation",layer = 'counts' ) + theme_minimal() + ggtitle("") + theme(plot.title = element_text(size = 24, face = "bold")) + labs(x = "Days Post Intubation",fill = "") + 
+  theme(axis.text.x = element_text(hjust=1,size = 24),
+        axis.text.y = element_text(hjust=1,size = 24),
+        axis.title.y = element_text(size = 30,face = "bold"),
+        axis.title.x = element_text(size = 30,face = "bold"),
+        legend.title = element_text(size=24,face = "bold"), #change legend title font size
+        legend.text = element_text(size=24,face = "bold")) + theme(strip.text.x = element_text(size = 36,face = 'bold'))  + scale_fill_manual(values = rep("#69b3a2",7)) + NoLegend()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD4effector_PD1_bydays.jpeg",width=30,height=20,units="cm",res=300)
+ggplot(vln_df, aes(x = cluster, y = PDCD1)) + geom_violin(aes(fill = cluster), trim=TRUE, scale = "width",colour = "#4f845c") + theme_minimal() + ggtitle("") + theme(plot.title = element_text(size = 24, face = "bold")) + labs(x = "Days Post Intubation",fill = "") + 
+  theme(axis.text.x = element_text(hjust=1,size = 30,angle = 45),
+        axis.text.y = element_text(hjust=1,size = 30),
+        axis.title.y = element_text(size = 36,face = "bold"),
+        axis.title.x = element_text(size = 36,face = "bold"),
+        legend.title = element_text(size=24,face = "bold"), #change legend title font size
+        legend.text = element_text(size=24,face = "bold")) + theme(strip.text.x = element_text(size = 36,face = 'bold'))  + scale_fill_manual(values = rep("#9fba95",7)) + NoLegend() 
+dev.off()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD4effector_TM3_bydays.jpeg",width=30,height=20,units="cm",res=300)
+ggplot(vln_df, aes(x = cluster, y = TIM3)) + geom_violin(aes(fill = cluster), trim=TRUE, scale = "width",,colour = "#4f845c") + theme_minimal() + ggtitle("") + theme(plot.title = element_text(size = 24, face = "bold")) + labs(x = "Days Post Intubation",fill = "") + 
+  theme(axis.text.x = element_text(hjust=1,size = 30,angle = 45),
+        axis.text.y = element_text(hjust=1,size = 30),
+        axis.title.y = element_text(size = 36,face = "bold"),
+        axis.title.x = element_text(size = 36,face = "bold"),
+        legend.title = element_text(size=24,face = "bold"), #change legend title font size
+        legend.text = element_text(size=24,face = "bold")) + theme(strip.text.x = element_text(size = 36,face = 'bold'))  + scale_fill_manual(values = rep("#9fba95",7)) + NoLegend() 
+dev.off()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD4effector_CTLA4_bydays.jpeg",width=30,height=20,units="cm",res=300)
+ggplot(vln_df, aes(x = cluster, y = CTLA4)) + geom_violin(aes(fill = cluster), trim=TRUE, scale = "width",,colour = "#4f845c") + theme_minimal() + ggtitle("") + theme(plot.title = element_text(size = 24, face = "bold")) + labs(x = "Days Post Intubation",fill = "") + 
+  theme(axis.text.x = element_text(hjust=1,size = 30,angle = 45),
+        axis.text.y = element_text(hjust=1,size = 30),
+        axis.title.y = element_text(size = 36,face = "bold"),
+        axis.title.x = element_text(size = 36,face = "bold"),
+        legend.title = element_text(size=24,face = "bold"), #change legend title font size
+        legend.text = element_text(size=24,face = "bold")) + theme(strip.text.x = element_text(size = 36,face = 'bold'))  + scale_fill_manual(values = rep("#9fba95",7)) + NoLegend() 
+dev.off()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD4effector_LAG3_bydays.jpeg",width=30,height=20,units="cm",res=300)
+ggplot(vln_df, aes(x = cluster, y = LAG3)) + geom_violin(aes(fill = cluster), trim=TRUE, scale = "width",,colour = "#4f845c") + theme_minimal() + ggtitle("") + theme(plot.title = element_text(size = 24, face = "bold")) + labs(x = "Days Post Intubation",fill = "") + 
+  theme(axis.text.x = element_text(hjust=1,size = 30,angle = 45),
+        axis.text.y = element_text(hjust=1,size = 30),
+        axis.title.y = element_text(size = 36,face = "bold"),
+        axis.title.x = element_text(size = 36,face = "bold"),
+        legend.title = element_text(size=24,face = "bold"), #change legend title font size
+        legend.text = element_text(size=24,face = "bold")) + theme(strip.text.x = element_text(size = 36,face = 'bold'))  + scale_fill_manual(values = rep("#9fba95",7)) + NoLegend() 
+dev.off()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD4effector_ENTPD1_bydays.jpeg",width=30,height=20,units="cm",res=300)
+ggplot(vln_df, aes(x = cluster, y = ENTPD1)) + geom_violin(aes(fill = cluster), trim=TRUE, scale = "width",,colour = "#4f845c") + theme_minimal() + ggtitle("") + theme(plot.title = element_text(size = 24, face = "bold")) + labs(x = "Days Post Intubation",fill = "") + 
+  theme(axis.text.x = element_text(hjust=1,size = 30,angle = 45),
+        axis.text.y = element_text(hjust=1,size = 30),
+        axis.title.y = element_text(size = 36,face = "bold"),
+        axis.title.x = element_text(size = 36,face = "bold"),
+        legend.title = element_text(size=24,face = "bold"), #change legend title font size
+        legend.text = element_text(size=24,face = "bold")) + theme(strip.text.x = element_text(size = 36,face = 'bold'))  + scale_fill_manual(values = rep("#9fba95",7)) + NoLegend() 
+dev.off()
+```
+
+```{r Fig 4b }
+cd4_dummy <- cd4_df %>%
+  group_by(days_post_intubation) %>%
+  summarize(effectorscore0.mean = median(effectorscore0),effectorscore1.mean = median(effectorscore1),effectorscore2.mean = median(effectorscore2))
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD4_effectorscore1_bydays.jpeg",width=60,height=30,units="cm",res=300)
+ggplot(data = cd4_df, aes(x=effectorscore1))  +labs(x = "",y = "Density") +
+  geom_density(lwd = 2.5, linetype = "dashed",aes(x = effectorscore0),colour = c("#575757") )+ 
+  geom_density(lwd = 3.5, linetype = 1,aes(x=effectorscore1),colour = c("#2b6a99"))+ 
+  facet_wrap( ~ days_post_intubation,nrow = 2) + 
+  geom_vline(data=cd4_dummy, aes(xintercept=effectorscore1.mean),colour = c("#2b6a99"),lwd = 3, linetype = 1) +
+  geom_vline(data=cd4_dummy, lwd = 2.3,aes(xintercept=effectorscore0.mean), color = c("#575757"), linetype="dashed") +
+  #scale_color_manual(values = c("#D55E00","#E69F00","#F0E442","#009E73","#56B4E9","#0072B2","#CC79A7"),name = "Days Post Intubation") +
+  theme_minimal() + ggtitle("Effector CFS") + theme(plot.title = element_text(size = 36, face = "bold")) + 
+  theme(axis.text.x = element_text(hjust=1,size = 18),
+        axis.text.y = element_text(hjust=1,size = 24),
+        axis.title.y = element_text(size = 36,face = "bold"),
+        legend.title = element_text(size=24,face = "bold"), #change legend title font size
+        legend.text = element_text(size=24,face = "bold")) + theme(strip.text.x = element_text(size = 40,face = 'bold')) + geom_segment(aes(x = 0.85, y = 0, xend = 0.85, yend = 1),color = "#f16c23",lwd = 4,linetype = "dashed")
+dev.off()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD4_effectorscore2_bydays.jpeg",width=60,height=30,units="cm",res=300)
+ggplot(data = cd4_df, aes(x=effectorscore21))  +labs(x = "",y = "Density") +
+  geom_density(lwd = 2.5, linetype = "dashed",aes(x = effectorscore0),colour = c("#575757") )+ 
+  geom_density(lwd = 3.5, linetype = 1,aes(x=effectorscore2),colour = c("#2b6a99"))+ 
+  facet_wrap( ~ days_post_intubation,nrow = 2) + 
+  geom_vline(data=cd4_dummy, aes(xintercept=effectorscore2.mean),colour = c("#2b6a99"),lwd = 3, linetype = 1) +
+  geom_vline(data=cd4_dummy, lwd = 2.3,aes(xintercept=effectorscore0.mean), color = c("#575757"), linetype="dashed") +
+  #scale_color_manual(values = c("#D55E00","#E69F00","#F0E442","#009E73","#56B4E9","#0072B2","#CC79A7"),name = "Days Post Intubation") +
+  theme_minimal() + ggtitle("Effector CFS") + theme(plot.title = element_text(size = 36, face = "bold")) + 
+  theme(axis.text.x = element_text(hjust=1,size = 18),
+        axis.text.y = element_text(hjust=1,size = 24),
+        axis.title.y = element_text(size = 36,face = "bold"),
+        legend.title = element_text(size=24,face = "bold"), #change legend title font size
+        legend.text = element_text(size=24,face = "bold")) + theme(strip.text.x = element_text(size = 40,face = 'bold')) + geom_segment(aes(x = 0.8, y = 0, xend = 0.8, yend = 4),color = "#f16c23",lwd = 4,linetype = "dashed")
+dev.off()
+```
+
+
+### cd4 memory
+
+```{r}
+ret_memorycd4 = readRDS("~/Misc/B-Lightning/COVID_longitudinal/memorycd4_BLightning_results_CFS1_cutoff3.rds")
+
+known.memory.upregulated.markers = c("PTPRC","SELL","CCR7","CD27","CD44")
+
+known.memory.downregulated.markers = c()
+
+```
+
+```{r}
+memoryscore0 = getscore(cscore,known.memory.upregulated.markers,known.memory.downregulated.markers,
+                        covid_74_cd4_so@assays$RNA@counts[c(known.memory.upregulated.markers,known.memory.downregulated.markers),])
+
+memoryscore1 = getscore(cscore,ret_memorycd4[[2]],ret_memorycd4[[3]],
+                        covid_74_cd4_so@assays$RNA@counts[c(ret_memorycd4[[2]],ret_memorycd4[[3]]),])
+
+memoryscore2 = getscore(cscore,c(known.memory.upregulated.markers,ret_memorycd4[[2]]),c(known.memory.downregulated.markers,ret_memorycd4[[3]]),
+                        covid_74_cd4_so@assays$RNA@counts[c(known.memory.upregulated.markers,ret_memorycd4[[2]],known.memory.downregulated.markers,ret_memorycd4[[3]]),])
+
+cd4_df$memoryscore0 = memoryscore0
+cd4_df$memoryscore1 = memoryscore1
+cd4_df$memoryscore2 = memoryscore2
+```
+
+```{r Fig 4a}
+cd4_dummy <- cd4_df %>%
+  group_by(days_post_intubation) %>%
+  summarize(memoryscore0.mean = median(memoryscore0),memoryscore1.mean = median(memoryscore1),memoryscore2.mean = median(memoryscore2))
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD4_memoryscore1_bydays.jpeg",width=60,height=30,units="cm",res=300)
+ggplot(data = cd4_df, aes(x=memoryscore1))  +labs(x = "",y = "Density") +
+  geom_density(lwd = 2.5, linetype = "dashed",aes(x = memoryscore0),colour = c("#575757") )+ 
+  geom_density(lwd = 3.5, linetype = 1,aes(x=memoryscore1),colour = c("#2b6a99"))+ 
+  facet_wrap( ~ days_post_intubation,nrow = 2) + 
+  geom_vline(data=cd4_dummy, aes(xintercept=memoryscore1.mean),colour = c("#2b6a99"),lwd = 3, linetype = 1) +
+  geom_vline(data=cd4_dummy, lwd = 2.3,aes(xintercept=memoryscore0.mean), color = c("#575757"), linetype="dashed") +
+  #scale_color_manual(values = c("#D55E00","#E69F00","#F0E442","#009E73","#56B4E9","#0072B2","#CC79A7"),name = "Days Post Intubation") +
+  theme_minimal() + ggtitle("Memory CFS") + theme(plot.title = element_text(size = 36, face = "bold")) + 
+  theme(axis.text.x = element_text(hjust=1,size = 18),
+        axis.text.y = element_text(hjust=1,size = 24),
+        axis.title.y = element_text(size = 36,face = "bold"),
+        legend.title = element_text(size=24,face = "bold"), #change legend title font size
+        legend.text = element_text(size=24,face = "bold")) + theme(strip.text.x = element_text(size = 40,face = 'bold')) 
+dev.off()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD4_memoryscore2_bydays.jpeg",width=60,height=30,units="cm",res=300)
+ggplot(data = cd4_df, aes(x=memoryscore2))  +labs(x = "",y = "Density") +
+  geom_density(lwd = 2.5, linetype = "dashed",aes(x = memoryscore0),colour = c("#575757") )+ 
+  geom_density(lwd = 3.5, linetype = 1,aes(x=memoryscore2),colour = c("#2b6a99"))+ 
+  facet_wrap( ~ days_post_intubation,nrow = 2) + 
+  geom_vline(data=cd4_dummy, aes(xintercept=memoryscore2.mean),colour = c("#2b6a99"),lwd = 3, linetype = 1) +
+  geom_vline(data=cd4_dummy, lwd = 2.3,aes(xintercept=memoryscore0.mean), color = c("#575757"), linetype="dashed") +
+  #scale_color_manual(values = c("#D55E00","#E69F00","#F0E442","#009E73","#56B4E9","#0072B2","#CC79A7"),name = "Days Post Intubation") +
+  theme_minimal() + ggtitle("Memory CFS") + theme(plot.title = element_text(size = 36, face = "bold")) + 
+  theme(axis.text.x = element_text(hjust=1,size = 18),
+        axis.text.y = element_text(hjust=1,size = 24),
+        axis.title.y = element_text(size = 36,face = "bold"),
+        legend.title = element_text(size=24,face = "bold"), #change legend title font size
+        legend.text = element_text(size=24,face = "bold")) + theme(strip.text.x = element_text(size = 40,face = 'bold')) 
+dev.off()
+
+```
+
+```{r Supplementary Fig 1a-e}
+cd4_df$UMAP1 = as.data.frame(covid_74_cd4_so@reductions$umap@cell.embeddings)$umap_1
+cd4_df$UMAP2= as.data.frame(covid_74_cd4_so@reductions$umap@cell.embeddings)$umap_2
+cd4_df$PDCD1 = covid_74_cd4_so@assays$RNA@data['PDCD1',] %>% as.vector()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD4_UMAP.jpeg",width=36,height=25,units="cm",res=300)
+cd4_df %>% ggplot() + geom_point(aes(x = UMAP1, y = UMAP2,colour = days_post_intubation), size = 3)+ scale_color_manual(values = c("#D55E00","#E69F00","#009E73","#56B4E9","#0072B2","#CC79A7","purple"),name = "Days Post Intubation") + theme_minimal() + 
+  theme(axis.text.x = element_text(hjust=1,size = 22),
+        axis.text.y = element_text(hjust=1,size = 22),
+        axis.title.x = element_text(size = 28,face = "bold"),
+        axis.title.y = element_text(size = 28,face = "bold"),
+        legend.title = element_text(size=28,face = "bold"), #change legend title font size
+        legend.text = element_text(size=28,face = "bold")) +guides(colour = guide_legend(override.aes = list(size=10)))
+dev.off()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD4_UMAP_coloredbyeffectorscore0.jpeg",width=30,height=25,units="cm",res=300)
+cd4_df %>% arrange(effectorscore0) %>% ggplot() + geom_point(aes(x = UMAP1, y = UMAP2,colour = rank(effectorscore0)/dim(cd4_df)[1]),alpha = 7/10,size = 3)+ scale_colour_gradientn(limits=c(0, 1),breaks=seq(0,1,by=0.25),colours = colorRamps::blue2red(10),name = "Rank/N") + theme_minimal()+ 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(hjust=1,size = 22),
+        axis.text.y = element_text(hjust=1,size = 22),
+        axis.title.x = element_text(size = 28,face = "bold"),
+        axis.title.y = element_text(size = 28,face = "bold"),
+        legend.title = element_text(size=28,face = "bold"), #change legend title font size
+        legend.text = element_text(size=28,face = "bold")) 
+dev.off()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD4_UMAP_coloredbyeffectorscore1.jpeg",width=30,height=25,units="cm",res=300)
+cd4_df %>% arrange(effectorscore1) %>% ggplot() + geom_point(aes(x = UMAP1, y = UMAP2,colour = rank(effectorscore1)/dim(cd4_df)[1]),alpha = 7/10,size = 3)+ scale_colour_gradientn(limits=c(0, 1),breaks=seq(0,1,by=0.25),colours = colorRamps::blue2red(10),name = "Rank/N") + theme_minimal()+ 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(hjust=1,size = 22),
+        axis.text.y = element_text(hjust=1,size = 22),
+        axis.title.x = element_text(size = 28,face = "bold"),
+        axis.title.y = element_text(size = 28,face = "bold"),
+        legend.title = element_text(size=28,face = "bold"), #change legend title font size
+        legend.text = element_text(size=28,face = "bold")) 
+dev.off()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD4_UMAP_coloredbyeffectorscore2.jpeg",width=30,height=25,units="cm",res=300)
+cd4_df %>% arrange(effectorscore2) %>% ggplot() + geom_point(aes(x = UMAP1, y = UMAP2,colour = rank(effectorscore2)/dim(cd4_df)[1]),alpha = 7/10,size = 3)+ scale_colour_gradientn(limits=c(0, 1),breaks=seq(0,1,by=0.25),colours = colorRamps::blue2red(10),name = "Rank/N") + theme_minimal()+ 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(hjust=1,size = 22),
+        axis.text.y = element_text(hjust=1,size = 22),
+        axis.title.x = element_text(size = 28,face = "bold"),
+        axis.title.y = element_text(size = 28,face = "bold"),
+        legend.title = element_text(size=28,face = "bold"), #change legend title font size
+        legend.text = element_text(size=28,face = "bold")) 
+dev.off()
+
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD4_UMAP_coloredbymemoryscore0.jpeg",width=30,height=25,units="cm",res=300)
+cd4_df %>% arrange(memoryscore0) %>% ggplot() + geom_point(aes(x = UMAP1, y = UMAP2,colour = rank(memoryscore0 + effectorscore0)/dim(cd4_df)[1]),alpha = 7/10,size = 3)+ scale_colour_gradientn(limits=c(0, 1),breaks=seq(0,1,by=0.25),colours = colorRamps::blue2red(10),name = "Rank/N") + theme_minimal()+ 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(hjust=1,size = 22),
+        axis.text.y = element_text(hjust=1,size = 22),
+        axis.title.x = element_text(size = 28,face = "bold"),
+        axis.title.y = element_text(size = 28,face = "bold"),
+        legend.title = element_text(size=28,face = "bold"), #change legend title font size
+        legend.text = element_text(size=28,face = "bold")) 
+dev.off()
+
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD4_UMAP_coloredbymemoryscore1.jpeg",width=30,height=25,units="cm",res=300)
+cd4_df %>% arrange(memoryscore1) %>% ggplot() + geom_point(aes(x = UMAP1, y = UMAP2,colour = rank(memoryscore1)/dim(cd4_df)[1]),alpha = 7/10,size = 3)+ scale_colour_gradientn(limits=c(0, 1),breaks=seq(0,1,by=0.25),colours = colorRamps::blue2red(10),name = "Rank/N") + theme_minimal()+ 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(hjust=1,size = 22),
+        axis.text.y = element_text(hjust=1,size = 22),
+        axis.title.x = element_text(size = 28,face = "bold"),
+        axis.title.y = element_text(size = 28,face = "bold"),
+        legend.title = element_text(size=28,face = "bold"), #change legend title font size
+        legend.text = element_text(size=28,face = "bold")) 
+dev.off()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD4_UMAP_coloredbymemoryscore2.jpeg",width=30,height=25,units="cm",res=300)
+cd4_df %>% arrange(memoryscore2) %>% ggplot() + geom_point(aes(x = UMAP1, y = UMAP2,colour = rank(memoryscore2)/dim(cd4_df)[1]),alpha = 7/10,size = 3)+ scale_colour_gradientn(limits=c(0, 1),breaks=seq(0,1,by=0.25),colours = colorRamps::blue2red(10),name = "Rank/N") + theme_minimal()+ 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(hjust=1,size = 22),
+        axis.text.y = element_text(hjust=1,size = 22),
+        axis.title.x = element_text(size = 28,face = "bold"),
+        axis.title.y = element_text(size = 28,face = "bold"),
+        legend.title = element_text(size=28,face = "bold"), #change legend title font size
+        legend.text = element_text(size=28,face = "bold")) 
+dev.off()
+```
+```{r Fig 4c}
+library(ggpmisc)
+library(ggpubr)
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD4_memory0_vs_effector0.jpeg",width=60,height=25,units="cm",res=300)
+ggplot(data = cd4_df, aes(x=memoryscore0,y = effectorscore0))+ 
+  geom_point(colour = c("#4f845c"),size = 3)+  geom_smooth(method = "lm",colour = "black",size = 2) +
+  stat_regline_equation(aes(label = ..rr.label..),size = 10 )+
+  facet_wrap( ~ days_post_intubation,nrow = 2) + 
+  scale_color_manual(values = c("#4f845c"), name = "Days Post Intubation") + xlab("Memory CFS") + ylab("Effector CFS") + 
+  theme_minimal() + theme(plot.title = element_text(size = 24, face = "bold")) + 
+  theme(axis.text.x = element_text(hjust=1,size = 22),
+        axis.text.y = element_text(hjust=1,size = 22),
+        axis.title.x = element_text(size = 36,face = "bold"),
+        axis.title.y = element_text(size = 36,face = "bold"),
+        legend.title = element_text(size=28,face = "bold"), #change legend title font size
+        legend.text = element_text(size=28,face = "bold")) + theme(strip.text.x = element_text(size = 40,face = 'bold'))
+dev.off()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD4_memory1_vs_effector1.jpeg",width=60,height=25,units="cm",res=300)
+ggplot(data = cd4_df, aes(x=memoryscore1,y = effectorscore1))+ 
+  geom_point(colour = c("#4f845c"),size = 3)+  geom_smooth(method = "lm",colour = "black",size = 2) +
+  stat_regline_equation(aes(label = ..rr.label..),size = 10 )+
+  facet_wrap( ~ days_post_intubation,nrow = 2) + 
+  scale_color_manual(values = c("#4f845c"), name = "Days Post Intubation") + xlab("Memory CFS") + ylab("Effector CFS") + 
+  theme_minimal() + theme(plot.title = element_text(size = 24, face = "bold")) + 
+  theme(axis.text.x = element_text(hjust=1,size = 22),
+        axis.text.y = element_text(hjust=1,size = 22),
+        axis.title.x = element_text(size = 36,face = "bold"),
+        axis.title.y = element_text(size = 36,face = "bold"),
+        legend.title = element_text(size=28,face = "bold"), #change legend title font size
+        legend.text = element_text(size=28,face = "bold")) + theme(strip.text.x = element_text(size = 40,face = 'bold'))
+dev.off()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD4_memory2_vs_effector2.jpeg",width=60,height=25,units="cm",res=300)
+ggplot(data = cd4_df, aes(x=memoryscore2,y = effectorscore2))+ 
+  geom_point(colour = c("#4f845c"),size = 3)+  geom_smooth(method = "lm",colour = "black",size = 2) +
+  stat_regline_equation(aes(label = ..rr.label..),size = 10 )+
+  facet_wrap( ~ days_post_intubation,nrow = 2) + 
+  scale_color_manual(values = c("#4f845c"), name = "Days Post Intubation") + xlab("Memory CFS") + ylab("Effector CFS") + 
+  theme_minimal() + theme(plot.title = element_text(size = 24, face = "bold")) + 
+  theme(axis.text.x = element_text(hjust=1,size = 22),
+        axis.text.y = element_text(hjust=1,size = 22),
+        axis.title.x = element_text(size = 36,face = "bold"),
+        axis.title.y = element_text(size = 36,face = "bold"),
+        legend.title = element_text(size=28,face = "bold"), #change legend title font size
+        legend.text = element_text(size=28,face = "bold")) + theme(strip.text.x = element_text(size = 40,face = 'bold'))
+dev.off()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/CD4_memory2_vs_effector2_noR2.jpeg",width=60,height=25,units="cm",res=300)
+ggplot(data = cd4_df, aes(x=memoryscore2,y = effectorscore2))+ 
+  geom_point(colour = c("#4f845c"),size = 3)+  geom_smooth(method = "lm",colour = "black",size = 2) +
+  #stat_regline_equation(aes(label = ..rr.label..),size = 10 )+
+  facet_wrap( ~ days_post_intubation,nrow = 2) + 
+  scale_color_manual(values = c("#4f845c"), name = "Days Post Intubation") + xlab("Memory CFS") + ylab("Effector CFS") + 
+  theme_minimal() + theme(plot.title = element_text(size = 24, face = "bold")) + 
+  theme(axis.text.x = element_text(hjust=1,size = 22),
+        axis.text.y = element_text(hjust=1,size = 22),
+        axis.title.x = element_text(size = 36,face = "bold"),
+        axis.title.y = element_text(size = 36,face = "bold"),
+        legend.title = element_text(size=28,face = "bold"), #change legend title font size
+        legend.text = element_text(size=28,face = "bold")) + theme(strip.text.x = element_text(size = 40,face = 'bold'))
+dev.off()
+```
+
+# COVID Airway 
+```{r}
+covid_main_tcell_so <- readRDS("~/Misc/B-Lightning/COVID_longitudinal/covid_main_tcell_so.rds")
+ret_effectorcd4 = readRDS("~/Misc/B-Lightning/COVID_longitudinal/NEW2_effectorcd4_BLightning_results_CFS1_cutoff3.rds")
+cscore = 'CFS1'
+known.effector.upregulated.markers =  c("IFNG","TBX21","GATA3","CXCR3","RORC","TNF")
+known.effector.downregulated.markers = c()
+
+```
+###CD4 effector
+```{r Fig 5a; Supplementary Fig 5a}
+source("~/Misc/B-Lightning/BLightning_code/getscore.R")
+covid_main_cd4 = subset(covid_main_tcell_so,subset = celltype == "Treg")
+known_up_effector = ret_effectorcd4[[4]][ret_effectorcd4[[4]] %in% rownames(covid_main_tcell_so)]
+known_dn_effector = ret_effectorcd4[[5]][ret_effectorcd4[[5]] %in% rownames(covid_main_tcell_so)]
+up_effector = ret_effectorcd4[[2]][ret_effectorcd4[[2]] %in% rownames(covid_main_tcell_so)]
+dn_effector = ret_effectorcd4[[3]][ret_effectorcd4[[3]] %in% rownames(covid_main_tcell_so)]
+dn_effector = append(dn_effector,c("FAIM3","NGFRAP1"))
+
+effectorscore0 = getscore(cscore,known_up_effector,known_dn_effector,
+                        covid_main_cd4@assays$RNA@counts[c(known_up_effector,known_dn_effector),])
+effectorscore1 = getscore(cscore,up_effector,dn_effector,
+                        covid_main_cd4@assays$RNA@counts[c(up_effector,dn_effector),])
+effectorscore2 = getscore(cscore,c(known_up_effector,up_effector),c(known_dn_effector,dn_effector),
+                        covid_main_cd4@assays$RNA@counts[c(known_up_effector,up_effector,known_dn_effector,dn_effector),])
+
+cd4_df = as.data.frame(effectorscore1)
+cd4_df$effectorscore0 = effectorscore0
+cd4_df$effectorscore2 = effectorscore2
+
+
+cd4_metadata = covid_main_tcell_so@meta.data
+cd4_metadata = cd4_metadata[rownames(cd4_df),]
+cd4_df$age=cd4_metadata$age
+cd4_df$Severity = cd4_metadata$severity
+cd4_df$age = as.factor(cd4_df$age)
+cd4_df$patient = cd4_metadata$patient
+cd4_df$series = cd4_metadata$series
+
+wilcox.test(cd4_df$effectorscore2[cd4_df$Severity == 'critical'],cd4_df$effectorscore2[cd4_df$Severity == 'control'])#***
+wilcox.test(cd4_df$effectorscore2[cd4_df$Severity == 'moderate'],cd4_df$effectorscore2[cd4_df$Severity == 'control'])#**
+wilcox.test(cd4_df$effectorscore2[cd4_df$Severity == 'moderate'],cd4_df$effectorscore2[cd4_df$Severity == 'critical'])
+
+wilcox.test(cd4_df$effectorscore0[cd4_df$Severity == 'critical'],cd4_df$effectorscore0[cd4_df$Severity == 'control'])#ns
+wilcox.test(cd4_df$effectorscore0[cd4_df$Severity == 'moderate'],cd4_df$effectorscore0[cd4_df$Severity == 'control'])#ns
+wilcox.test(cd4_df$effectorscore0[cd4_df$Severity == 'moderate'],cd4_df$effectorscore0[cd4_df$Severity == 'critical'])#***0
+ggplot(cd4_df, aes(x=effectorscore1, y=severity)) + geom_point()
+
+library(ggdist)
+library(ggsignif)
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/MAIN_CD4effectorscorebySeverity_post2.jpeg",width=30,height=20,units="cm",res=300)
+cd4_df %>% filter(series == 1) %>% 
+ggplot(aes(x = Severity, y = effectorscore2, fill = Severity)) +
+  
+  # add half-violin from {ggdist} package
+  stat_halfeye(
+    # adjust bandwidth
+    adjust = 1.1,
+    # move to the right
+    justification = -0.2,
+    # remove the slub interval
+    .width = 0,
+    point_colour = "#F0E442"
+  ) +
+  
+  geom_boxplot(
+    width = 0.2,
+    # removing outliers
+    outlier.color = "#F0E442",
+    alpha = 0.5
+  ) + ylab("CD4 Effector Score") + xlab("Severity") +
+  theme_minimal() + scale_fill_manual(values = c( "#79add6","#ee8227","#eb716b")) + theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold")) + scale_fill_manual(values = c( "#79add6","#ee8227","#eb716b"))  + 
+  geom_signif(comparisons = list(c("control", "critical"),c("moderate", "control"),c("moderate", "critical")),
+              map_signif_level=F,textsize = 6,fontface = "bold",y_position = c(1.5,1.35,1.2),annotation = c("***","**","***"))  + 
+  
+  coord_flip() 
+dev.off()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/MAIN_CD4effectorscorebySeverity_post1.jpeg",width=30,height=20,units="cm",res=300)
+cd4_df %>% filter(series == 1) %>% 
+ggplot(aes(x = Severity, y = effectorscore1, fill = Severity)) +
+  
+  # add half-violin from {ggdist} package
+  stat_halfeye(
+    # adjust bandwidth
+    adjust = 1.1,
+    # move to the right
+    justification = -0.2,
+    # remove the slub interval
+    .width = 0,
+    point_colour = "#F0E442"
+  ) +
+  
+  geom_boxplot(
+    width = 0.2,
+    # removing outliers
+    outlier.color = "#F0E442",
+    alpha = 0.5
+  ) + ylab("CD4 Effector Score") + xlab("Severity") +
+  theme_minimal() + scale_fill_manual(values = c( "#79add6","#ee8227","#eb716b")) + theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold")) + scale_fill_manual(values = c( "#79add6","#ee8227","#eb716b"))  + 
+  geom_signif(comparisons = list(c("control", "critical"),c("moderate", "control"),c("moderate", "critical")),
+              map_signif_level=F,textsize = 6,fontface = "bold",y_position = c(1.5,1.35,1.2),annotation = c("**","*","***"))  + 
+  
+  coord_flip() 
+dev.off()
+
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/MAIN_CD4effectorscorebySeverity_pre.jpeg",width=30,height=20,units="cm",res=300)
+cd4_df %>% filter(series == 1) %>% 
+ggplot(aes(x = Severity, y = effectorscore0, fill = Severity)) +
+  
+  # add half-violin from {ggdist} package
+  stat_halfeye(
+    # adjust bandwidth
+    adjust = 1.1,
+    # move to the right
+    justification = -0.2,
+    # remove the slub interval
+    .width = 0,
+    point_colour = "#F0E442"
+  ) +
+  
+  geom_boxplot(
+    width = 0.2,
+    # removing outliers
+    outlier.color = "#F0E442",
+    alpha = 0.5
+  ) + ylab("CD4 Effector Score") + xlab("Severity") +
+  theme_minimal() + scale_fill_manual(values = c( "#79add6","#ee8227","#eb716b")) + theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold")) + scale_fill_manual(values = c( "#79add6","#ee8227","#eb716b"))  + 
+  geom_signif(comparisons = list(c("control", "critical"),c("moderate", "control"),c("moderate", "critical")),
+              map_signif_level=F,textsize = 6,fontface = "bold",y_position = c(1.5,1.35,1.2),annotation = c("ns","ns","***"))  + coord_flip()
+dev.off()
+
+```
+
+###CD4 memory
+```{r}
+ret_memorycd4 = readRDS("~/Misc/B-Lightning/COVID_longitudinal/memorycd4_BLightning_results_CFS1_cutoff3.rds")
+```
+```{r Fig 5b; Supplementary Fig 5b}
+source("~/Misc/B-Lightning/BLightning_code/getscore.R")
+known_up_memory = ret_memorycd4[[4]][ret_memorycd4[[4]] %in% rownames(covid_main_tcell_so)]
+known_dn_memory = ret_memorycd4[[5]][ret_memorycd4[[5]] %in% rownames(covid_main_tcell_so)]
+
+up_memory = ret_memorycd4[[2]][ret_memorycd4[[2]] %in% rownames(covid_main_tcell_so)]
+up_memory = append(up_memory, c("FAM211A","GNB2L1","HIST1H1D"))
+dn_memory = ret_memorycd4[[3]][ret_memorycd4[[3]] %in% rownames(covid_main_tcell_so)]
+
+memoryscore1 = getscore(cscore,up_memory,dn_memory,
+                        covid_main_cd4@assays$RNA@counts[c(up_memory,dn_memory),])
+memoryscore0 = getscore(cscore,known_up_memory,known_dn_memory,
+                        covid_main_cd4@assays$RNA@counts[c(known_up_memory,known_dn_memory),])
+memoryscore2 = getscore(cscore,c(known_up_memory,up_memory),c(known_dn_memory,dn_memory),
+                        covid_main_cd4@assays$RNA@counts[c(known_up_memory,up_memory,known_dn_memory,dn_memory),])
+
+
+cd4_df$memoryscore1 = memoryscore1
+cd4_df$memoryscore0 = memoryscore0
+cd4_df$memoryscore2 = memoryscore2
+
+wilcox.test(cd4_df$memoryscore2[cd4_df$Severity == 'critical'],cd4_df$memoryscore2[cd4_df$Severity == 'control'])#***
+wilcox.test(cd4_df$memoryscore2[cd4_df$Severity == 'moderate'],cd4_df$memoryscore2[cd4_df$Severity == 'control'])#*
+wilcox.test(cd4_df$memoryscore2[cd4_df$Severity == 'critical'],cd4_df$memoryscore2[cd4_df$Severity == 'moderate'])#***
+
+wilcox.test(cd4_df$memoryscore1[cd4_df$Severity == 'critical'],cd4_df$memoryscore1[cd4_df$Severity == 'control'])#***
+wilcox.test(cd4_df$memoryscore1[cd4_df$Severity == 'moderate'],cd4_df$memoryscore1[cd4_df$Severity == 'control'])#*
+wilcox.test(cd4_df$memoryscore1[cd4_df$Severity == 'critical'],cd4_df$memoryscore1[cd4_df$Severity == 'moderate'])#***
+
+
+wilcox.test(cd4_df$memoryscore0[cd4_df$Severity == 'critical'],cd4_df$memoryscore0[cd4_df$Severity == 'control'])#***
+wilcox.test(cd4_df$memoryscore0[cd4_df$Severity == 'moderate'],cd4_df$memoryscore0[cd4_df$Severity == 'control'])#ns
+wilcox.test(cd4_df$memoryscore0[cd4_df$Severity == 'critical'],cd4_df$memoryscore0[cd4_df$Severity == 'moderate'])#***
+
+ggplot(cd4_df, aes(x=memoryscore1, y=severity)) + geom_point()
+
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/MAIN_CD4memoryscorebySeverity_post2.jpeg",width=30,height=20,units="cm",res=300)
+cd4_df %>% filter(series == 1) %>% 
+ggplot(aes(x = Severity, y = memoryscore2, fill = Severity)) +
+  
+  # add half-violin from {ggdist} package
+  stat_halfeye(
+    # adjust bandwidth
+    adjust = 1.1,
+    # move to the right
+    justification = -0.2,
+    # remove the slub interval
+    .width = 0,
+    point_colour = "#F0E442"
+  ) +
+  
+  geom_boxplot(
+    width = 0.2,
+    # removing outliers
+    outlier.color = "#F0E442",
+    alpha = 0.5
+  ) + ylab("CD4 Memory Score") + xlab("Severity") +
+  theme_minimal() + scale_fill_manual(values = c( "#79add6","#ee8227","#eb716b")) + theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold")) + scale_fill_manual(values = c( "#79add6","#ee8227","#eb716b"))  + 
+  geom_signif(comparisons = list(c("control", "critical"),c("moderate", "control"),c("moderate", "critical")),
+              map_signif_level=F,textsize = 6,fontface = "bold",y_position = c(1.55,1.4,1.25),annotation = c("***","*","***"))  + coord_flip()
+dev.off()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/MAIN_CD4memoryscorebySeverity_post1.jpeg",width=30,height=20,units="cm",res=300)
+cd4_df %>% filter(series == 1) %>% 
+ggplot(aes(x = Severity, y = memoryscore1, fill = Severity)) +
+  
+  # add half-violin from {ggdist} package
+  stat_halfeye(
+    # adjust bandwidth
+    adjust = 1.1,
+    # move to the right
+    justification = -0.2,
+    # remove the slub interval
+    .width = 0,
+    point_colour = "#F0E442"
+  ) +
+  
+  geom_boxplot(
+    width = 0.2,
+    # removing outliers
+    outlier.color = "#F0E442",
+    alpha = 0.5
+  ) + ylab("CD4 Memory Score") + xlab("Severity") +
+  theme_minimal() +  scale_fill_manual(values = c( "#79add6","#ee8227","#eb716b")) + theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold")) + scale_fill_manual(values = c( "#79add6","#ee8227","#eb716b"))  + 
+  geom_signif(comparisons = list(c("control", "critical"),c("moderate", "control"),c("moderate", "critical")),
+              map_signif_level=F,textsize = 6,fontface = "bold",y_position = c(1.55,1.4,1.25),annotation = c("***","*","***"))  + coord_flip()
+dev.off()
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/MAIN_CD4memoryscorebySeverity_pre.jpeg",width=30,height=20,units="cm",res=300)
+cd4_df %>% filter(series == 1) %>% 
+ggplot(aes(x = Severity, y = memoryscore0, fill = Severity)) +
+  
+  # add half-violin from {ggdist} package
+  stat_halfeye(
+    # adjust bandwidth
+    adjust = 1.1,
+    # move to the right
+    justification = -0.2,
+    # remove the slub interval
+    .width = 0,
+    point_colour = "#F0E442"
+  ) +
+  
+  geom_boxplot(
+    width = 0.2,
+    # removing outliers
+    outlier.color = "#F0E442",
+    alpha = 0.5
+  ) + ylab("CD4 Memory Score") + xlab("Severity") +
+  theme_minimal() + scale_fill_manual(values = c( "#79add6","#ee8227","#eb716b")) + theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold")) + scale_fill_manual(values = c( "#79add6","#ee8227","#eb716b"))  + 
+  geom_signif(comparisons = list(c("control", "critical"),c("moderate", "control"),c("moderate", "critical")),
+              map_signif_level=F,textsize = 6,fontface = "bold",y_position = c(1.55,1.4,1.25),annotation = c("***","ns","***"))  + coord_flip()
+dev.off()
+```
+###CD8 effector
+```{r}
+ret_effectorcd8 = readRDS("~/Misc/B-Lightning/COVID_longitudinal/NEW_effectorcd8_BLightning_results_CFS1_cutoff3.rds")
+known.effector.upregulated.markers = c("GZMB","PRF1","IFNG","TNF","IL2RA","TBX21")
+known.effector.downregulated.markers = c("CCR7","SELL")
+```
+```{r Supplementary Fig 4a, 6a}
+source("~/Misc/B-Lightning/BLightning_code/getscore.R")
+
+known_up_effector = ret_effectorcd8[[4]][ret_effectorcd8[[4]] %in% rownames(covid_main_tcell_so)]
+known_dn_effector = ret_effectorcd8[[5]][ret_effectorcd8[[5]] %in% rownames(covid_main_tcell_so)]
+
+up_effector = ret_effectorcd8[[2]][ret_effectorcd8[[2]] %in% rownames(covid_main_tcell_so)]
+dn_effector = ret_effectorcd8[[3]][ret_effectorcd8[[3]] %in% rownames(covid_main_tcell_so)]
+dn_effector = append(dn_effector,c("FAM65B"))
+covid_main_cd8 = subset(covid_main_tcell_so,subset = celltype == "CTL")
+effectorscore1 = getscore(cscore,up_effector,dn_effector,
+                        covid_main_cd8@assays$RNA@counts[c(up_effector,dn_effector),])
+effectorscore0 = getscore(cscore,known_up_effector,known_dn_effector,
+                        covid_main_cd8@assays$RNA@counts[c(known_up_effector,known_dn_effector),])
+effectorscore2= getscore(cscore,c(known_up_effector,up_effector),c(known_dn_effector,dn_effector),
+                        covid_main_cd8@assays$RNA@counts[c(known_up_effector,up_effector,known_dn_effector,dn_effector),])
+
+
+cd8_df = as.data.frame(effectorscore1)
+cd8_df$effectorscore0 = effectorscore0
+cd8_df$effectorscore2 = effectorscore2
+
+cd8_metadata = covid_main_cd8@meta.data
+cd8_metadata = cd8_metadata[rownames(cd8_df),]
+cd8_df$age=cd8_metadata$age
+cd8_df$Severity = cd8_metadata$severity
+
+cd8_df$patient = cd8_metadata$patient
+cd8_df$series = cd8_metadata$series
+
+
+wilcox.test(cd8_df$effectorscore2[cd8_df$Severity == 'critical'],cd8_df$effectorscore2[cd8_df$Severity == 'control'])#ns
+wilcox.test(cd8_df$effectorscore2[cd8_df$Severity == 'moderate'],cd8_df$effectorscore2[cd8_df$Severity == 'control'])#ns
+wilcox.test(cd8_df$effectorscore2[cd8_df$Severity == 'critical'],cd8_df$effectorscore2[cd8_df$Severity == 'moderate'])#**
+
+wilcox.test(cd8_df$effectorscore1[cd8_df$Severity == 'critical'],cd8_df$effectorscore1[cd8_df$Severity == 'control'])#ns
+wilcox.test(cd8_df$effectorscore1[cd8_df$Severity == 'moderate'],cd8_df$effectorscore1[cd8_df$Severity == 'control'])#ns
+wilcox.test(cd8_df$effectorscore1[cd8_df$Severity == 'critical'],cd8_df$effectorscore1[cd8_df$Severity == 'moderate'])#***
+
+
+wilcox.test(cd8_df$effectorscore0[cd8_df$Severity == 'critical'],cd8_df$effectorscore0[cd8_df$Severity == 'control'])#*
+wilcox.test(cd8_df$effectorscore0[cd8_df$Severity == 'moderate'],cd8_df$effectorscore0[cd8_df$Severity == 'control'])#*
+wilcox.test(cd8_df$effectorscore0[cd8_df$Severity == 'critical'],cd8_df$effectorscore0[cd8_df$Severity == 'moderate'])#***
+
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/MAIN_CD8effectorscorebySeverity_post2.jpeg",width=30,height=20,units="cm",res=300)
+cd8_df %>% filter(series == 1) %>% 
+ggplot(aes(x = Severity, y = effectorscore2, fill = Severity)) +
+  
+  # add half-violin from {ggdist} package
+  stat_halfeye(
+    # adjust bandwidth
+    adjust = 1.1,
+    # move to the right
+    justification = -0.2,
+    # remove the slub interval
+    .width = 0,
+    point_colour = "#F0E442"
+  ) +
+  
+  geom_boxplot(
+    width = 0.2,
+    # removing outliers
+    outlier.color = "#F0E442",
+    alpha = 0.5
+  ) + ylab("CD8 Effector Score") + xlab("Severity") +
+  theme_minimal() + scale_fill_manual(values = c( "#79add6","#ee8227","#eb716b")) + theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold")) + scale_fill_manual(values = c( "#79add6","#ee8227","#eb716b"))  + 
+  geom_signif(comparisons = list(c("control", "critical"),c("moderate", "control"),c("moderate", "critical")),
+              map_signif_level=F,textsize = 6,fontface = "bold",y_position = c(1.15,1.0,0.85),annotation = c("ns","ns","**"))  + coord_flip()
+dev.off()
+
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/MAIN_CD8effectorscorebySeverity_post1.jpeg",width=30,height=20,units="cm",res=300)
+cd8_df %>% filter(series == 1) %>% 
+ggplot(aes(x = Severity, y = effectorscore1, fill = Severity)) +
+  
+  # add half-violin from {ggdist} package
+  stat_halfeye(
+    # adjust bandwidth
+    adjust = 1.1,
+    # move to the right
+    justification = -0.2,
+    # remove the slub interval
+    .width = 0,
+    point_colour = "#F0E442"
+  ) +
+  
+  geom_boxplot(
+    width = 0.2,
+    # removing outliers
+    outlier.color = "#F0E442",
+    alpha = 0.5
+  ) + ylab("CD8 Effector Score") + xlab("Severity") +
+  theme_minimal() +  scale_fill_manual(values = c( "#79add6","#ee8227","#eb716b")) + theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold")) + scale_fill_manual(values = c( "#79add6","#ee8227","#eb716b"))  + 
+  geom_signif(comparisons = list(c("control", "critical"),c("moderate", "control"),c("moderate", "critical")),
+              map_signif_level=F,textsize = 6,fontface = "bold",y_position = c(1.25,1.1,0.95),annotation = c("ns","ns","***"))  + coord_flip()
+dev.off()
+
+
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/MAIN_CD8effectorscorebySeverity_pre.jpeg",width=30,height=20,units="cm",res=300)
+cd8_df %>% filter(series == 1) %>% 
+ggplot(aes(x = Severity, y = effectorscore0, fill = Severity)) +
+  
+  # add half-violin from {ggdist} package
+  stat_halfeye(
+    # adjust bandwidth
+    adjust = 1.1,
+    # move to the right
+    justification = -0.2,
+    # remove the slub interval
+    .width = 0,
+    point_colour = "#F0E442"
+  ) +
+  
+  geom_boxplot(
+    width = 0.2,
+    # removing outliers
+    outlier.color = "#F0E442",
+    alpha = 0.5
+  ) + ylab("CD8 Effector Score") + xlab("Severity") +
+  theme_minimal() + scale_fill_manual(values = c( "#79add6","#ee8227","#eb716b")) + theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold")) + scale_fill_manual(values = c( "#79add6","#ee8227","#eb716b"))  + 
+  geom_signif(comparisons = list(c("control", "critical"),c("moderate", "control"),c("moderate", "critical")),
+              map_signif_level=F,textsize = 6,fontface = "bold",y_position = c(1.15,1.0,0.85),annotation = c("**","*","***"))  + coord_flip()
+dev.off()
+```
+###CD8 memory
+```{r}
+ret_memorycd8 = readRDS("~/Misc/B-Lightning/COVID_longitudinal/NEW_memorycd8_BLightning_results_CFS1_cutoff4.rds")
+cscore = 'CFS1'
+```
+```{r Supplementary Fig 4b, 6b}
+source("~/Misc/B-Lightning/BLightning_code/getscore.R")
+known_up_memory = ret_memorycd8[[4]][ret_memorycd8[[4]] %in% rownames(covid_main_tcell_so)]
+known_dn_memory = ret_memorycd8[[5]][ret_memorycd8[[5]] %in% rownames(covid_main_tcell_so)]
+
+up_memory = ret_memorycd8[[2]][ret_memorycd8[[2]] %in% rownames(covid_main_tcell_so)]
+up_memory = append(up_memory,c("FAM65B"))
+dn_memory = ret_memorycd8[[3]][ret_memorycd8[[3]] %in% rownames(covid_main_tcell_so)]
+
+memoryscore0= getscore(cscore,known_up_memory,known_dn_memory,
+                        covid_main_cd8@assays$RNA@counts[c(known_up_memory,known_dn_memory),])
+
+memoryscore1 = getscore(cscore,up_memory,dn_memory,
+                        covid_main_cd8@assays$RNA@counts[c(up_memory,dn_memory),])
+memoryscore2= getscore(cscore,c(known_up_memory,up_memory),c(known_dn_memory,dn_memory),
+                        covid_main_cd8@assays$RNA@counts[c(known_up_memory,up_memory,known_dn_memory,dn_memory),])
+
+cd8_df$memoryscore0 = memoryscore0
+cd8_df$memoryscore1 = memoryscore1
+cd8_df$memoryscore2 = memoryscore2
+
+wilcox.test(cd8_df$memoryscore2[cd8_df$Severity == 'critical'],cd8_df$memoryscore2[cd8_df$Severity == 'control'])#*
+wilcox.test(cd8_df$memoryscore2[cd8_df$Severity == 'moderate'],cd8_df$memoryscore2[cd8_df$Severity == 'control'])#ns
+wilcox.test(cd8_df$memoryscore2[cd8_df$Severity == 'critical'],cd8_df$memoryscore2[cd8_df$Severity == 'moderate'])#***
+
+wilcox.test(cd8_df$memoryscore1[cd8_df$Severity == 'critical'],cd8_df$memoryscore1[cd8_df$Severity == 'control'])#*
+wilcox.test(cd8_df$memoryscore1[cd8_df$Severity == 'moderate'],cd8_df$memoryscore1[cd8_df$Severity == 'control'])#ns
+wilcox.test(cd8_df$memoryscore1[cd8_df$Severity == 'critical'],cd8_df$memoryscore1[cd8_df$Severity == 'moderate'])#***
+
+
+wilcox.test(cd8_df$memoryscore0[cd8_df$Severity == 'critical'],cd8_df$memoryscore0[cd8_df$Severity == 'control'])#*
+wilcox.test(cd8_df$memoryscore0[cd8_df$Severity == 'moderate'],cd8_df$memoryscore0[cd8_df$Severity == 'control'])#ns
+wilcox.test(cd8_df$memoryscore0[cd8_df$Severity == 'critical'],cd8_df$memoryscore0[cd8_df$Severity == 'moderate'])#***
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/MAIN_CD8memoryscorebySeverity_post2.jpeg",width=30,height=20,units="cm",res=300)
+cd8_df %>% filter(series == 1) %>% 
+ggplot(aes(x = Severity, y = memoryscore2, fill = Severity)) +
+  
+  # add half-violin from {ggdist} package
+  stat_halfeye(
+    # adjust bandwidth
+    adjust = 1.1,
+    # move to the right
+    justification = -0.2,
+    # remove the slub interval
+    .width = 0,
+    point_colour = "#F0E442"
+  ) +
+  
+  geom_boxplot(
+    width = 0.2,
+    # removing outliers
+    outlier.color = "#F0E442",
+    alpha = 0.5
+  ) + ylab("CD8 Memory Score") + xlab("Severity") +
+  theme_minimal() + scale_fill_manual(values = c( "#79add6","#ee8227","#eb716b")) + theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold")) + scale_fill_manual(values = c( "#79add6","#ee8227","#eb716b"))  + 
+  geom_signif(comparisons = list(c("control", "critical"),c("moderate", "control"),c("moderate", "critical")),
+              map_signif_level=F,textsize = 6,fontface = "bold",y_position = c(1.25,1.1,0.955),annotation = c("*","ns","***"))  + coord_flip()
+dev.off()
+
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/MAIN_CD8memoryscorebySeverity_post1.jpeg",width=30,height=20,units="cm",res=300)
+cd8_df %>% filter(series == 1) %>% 
+ggplot(aes(x = Severity, y = memoryscore1, fill = Severity)) +
+  
+  # add half-violin from {ggdist} package
+  stat_halfeye(
+    # adjust bandwidth
+    adjust = 1.1,
+    # move to the right
+    justification = -0.2,
+    # remove the slub interval
+    .width = 0,
+    point_colour = "#F0E442"
+  ) +
+  
+  geom_boxplot(
+    width = 0.2,
+    # removing outliers
+    outlier.color = "#F0E442",
+    alpha = 0.5
+  ) + ylab("CD8 Memory Score") + xlab("Severity") +
+  theme_minimal() +scale_fill_manual(values = c( "#79add6","#ee8227","#eb716b")) + theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold")) + scale_fill_manual(values = c( "#79add6","#ee8227","#eb716b"))  + 
+  geom_signif(comparisons = list(c("control", "critical"),c("moderate", "control"),c("moderate", "critical")),
+              map_signif_level=F,textsize = 6,fontface = "bold",y_position = c(1.25,1.1,0.955),annotation = c("*","ns","***"))  + coord_flip()
+dev.off()
+
+
+
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/MAIN_CD8memoryscorebySeverity_pre.jpeg",width=30,height=20,units="cm",res=300)
+cd8_df %>% filter(series == 1) %>% 
+ggplot(aes(x = Severity, y = memoryscore0, fill = Severity)) +
+  
+  # add half-violin from {ggdist} package
+  stat_halfeye(
+    # adjust bandwidth
+    adjust = 1.1,
+    # move to the right
+    justification = -0.2,
+    # remove the slub interval
+    .width = 0,
+    point_colour = "#F0E442"
+  ) +
+  
+  geom_boxplot(
+    width = 0.2,
+    # removing outliers
+    outlier.color = "#F0E442",
+    alpha = 0.5
+  ) + ylab("CD8 Memory Score") + xlab("Severity") +
+  theme_minimal() + scale_fill_manual(values = c( "#79add6","#ee8227","#eb716b")) + theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold")) + scale_fill_manual(values = c( "#79add6","#ee8227","#eb716b"))  + 
+  geom_signif(comparisons = list(c("control", "critical"),c("moderate", "control"),c("moderate", "critical")),
+              map_signif_level=F,textsize = 6,fontface = "bold",y_position = c(1.05,0.9,0.75),annotation = c("*","ns","***"))  + coord_flip()
+dev.off()
+```
+
+
+#COVID Blood
+```{r}
+covid19_blood_atlas <- readRDS("~/Misc/B-Lightning/COVID_longitudinal/covid19_blood_atlas.rds")
+covid19_blood_cd4_atlas = subset(covid19_blood_atlas,subset = Cell.group == 'CD4+ T cell' )
+covid19_blood_cd8_atlas = subset(covid19_blood_atlas,subset = Cell.group == 'CD8+ T cell' )
+```
+```{r}
+genelist = data.frame(gene = rownames(covid19_blood_atlas))
+rownames(genelist) = covid19_blood_atlas@assays[["RNA"]]@meta.features[["feature_name"]]
+```
+
+#CD4
+
+```{r}
+ret_effectorcd4 = readRDS("~/Misc/B-Lightning/COVID_longitudinal/NEW_effectorcd4_BLightning_results_CFS1_cutoff3.rds")
+cscore = 'CFS1'
+known.effector.upregulated.markers =  c("IFNG","TBX21","GATA3","CXCR3","RORC","TNF")
+known.effector.downregulated.markers = c()
+known_up_effector = known.effector.upregulated.markers[known.effector.upregulated.markers %in% rownames(genelist)]
+known_dn_effector = known.effector.downregulated.markers[known.effector.downregulated.markers%in% rownames(genelist)]
+
+
+```
+```{r Fig 5c; Supplementary Fig 5c}
+source("~/Misc/B-Lightning/BLightning_code/getscore.R")
+
+up_effector = ret_effectorcd4[[2]][ret_effectorcd4[[2]] %in% rownames(genelist)]
+dn_effector = ret_effectorcd4[[3]][ret_effectorcd4[[3]] %in% rownames(genelist)]
+
+
+effectorscore0 = getscore(cscore,genelist[known_up_effector,],genelist[known_dn_effector,],
+                        covid19_blood_cd4_atlas@assays$RNA@counts[c(genelist[known_up_effector,],genelist[known_dn_effector,]),])
+
+effectorscore1 = getscore(cscore,genelist[up_effector,],genelist[dn_effector,],
+                        covid19_blood_cd4_atlas@assays$RNA@counts[c(genelist[up_effector,],genelist[dn_effector,]),])
+
+effectorscore2 = getscore(cscore,genelist[c(known_up_effector,up_effector),],genelist[c(known_dn_effector,dn_effector),],
+                        covid19_blood_cd4_atlas@assays$RNA@counts[c(genelist[c(known_up_effector,up_effector),],genelist[c(known_dn_effector,dn_effector),]),])
+
+cd4_df = as.data.frame(effectorscore1)
+cd4_df$effectorscore0 = effectorscore0
+cd4_df$effectorscore2 = effectorscore2
+
+cd4_metadata = covid19_blood_cd4_atlas@meta.data
+cd4_metadata = cd4_metadata[rownames(cd4_df),]
+cd4_df$disease_original=cd4_metadata$disease_original
+cd4_df$covidcondition = cd4_metadata$`COVID-19 Condition`
+cd4_df$condition[cd4_df$disease_original == 'COVID-19 Severe'] = 'severe'
+cd4_df$condition[cd4_df$disease_original == 'COVID-19 Mild/Remission'] = 'mild/remission'
+cd4_df$condition[cd4_df$disease_original == 'Healthy'] = 'control'
+cd4_df$Condition = cd4_df$condition
+cd4_df$Severity = cd4_df$condition
+wilcox.test(cd4_df$effectorscore2[cd4_df$condition == 'severe'], y = cd4_df$effectorscore2[cd4_df$condition == 'control']) #*
+wilcox.test(cd4_df$effectorscore2[cd4_df$condition == 'mild/remission'], y = cd4_df$effectorscore2[cd4_df$condition == 'control']) #***
+wilcox.test(cd4_df$effectorscore2[cd4_df$condition == 'mild/remission'], y = cd4_df$effectorscore2[cd4_df$condition == 'severe']) #***
+
+wilcox.test(cd4_df$effectorscore1[cd4_df$condition == 'severe'], y = cd4_df$effectorscore1[cd4_df$condition == 'control']) #ns
+wilcox.test(cd4_df$effectorscore1[cd4_df$condition == 'mild/remission'], y = cd4_df$effectorscore1[cd4_df$condition == 'control']) #***
+wilcox.test(cd4_df$effectorscore1[cd4_df$condition == 'mild/remission'], y = cd4_df$effectorscore1[cd4_df$condition == 'severe']) #***
+
+wilcox.test(cd4_df$effectorscore0[cd4_df$condition == 'severe'], y = cd4_df$effectorscore0[cd4_df$condition == 'control']) #***
+wilcox.test(cd4_df$effectorscore0[cd4_df$condition == 'mild/remission'], y = cd4_df$effectorscore0[cd4_df$condition == 'control']) #***
+wilcox.test(cd4_df$effectorscore0[cd4_df$condition == 'mild/remission'], y = cd4_df$effectorscore0[cd4_df$condition == 'severe']) #**
+
+
+library(ggplot2)
+library(ggdist)
+library(ggsignif)
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/bloodatlas_cd4effectorbycondition_post2.jpeg",width=30,height=20,units="cm",res=300)
+cd4_df %>% 
+ggplot(aes(x = Severity, y = effectorscore2, fill = Severity)) +
+  
+  # add half-violin from {ggdist} package
+  stat_halfeye(
+    # adjust bandwidth
+    adjust =1.5,
+    # move to the right
+    justification = -0.2,
+    # remove the slub interval
+    .width = 0,
+    point_colour = "#F0E442"
+  ) +
+  
+  geom_boxplot(
+    width = 0.2,
+    # removing outliers
+    outlier.color = "#F0E442",
+    alpha = 0.5
+  ) + ylab("CD4 Effector Score") + xlab("Severity") +
+  theme_minimal()  + theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold"))  + scale_fill_manual(values = c( "#bfe4ee","#fbd178","#F9c3bf")) +
+    coord_flip() +
+  geom_signif(comparisons = list(c("control", "severe"),c("control", "mild/remission"),c("mild/remission", "severe")), annotations = c("*","***","***"),textsize = 6,fontface = "bold",
+              map_signif_level=TRUE,y_position = c(1.5,1.2,1.35)) 
+  dev.off()
+
+  jpeg("~/Misc/B-Lightning/COVID_longitudinal/bloodatlas_cd4effectorbycondition_post1.jpeg",width=30,height=20,units="cm",res=300)
+cd4_df %>% 
+ggplot(aes(x = Severity, y = effectorscore1, fill = Severity)) +
+  
+  # add half-violin from {ggdist} package
+  stat_halfeye(
+    # adjust bandwidth
+    adjust =1.5,
+    # move to the right
+    justification = -0.2,
+    # remove the slub interval
+    .width = 0,
+    point_colour = "#F0E442"
+  ) +
+  
+  geom_boxplot(
+    width = 0.2,
+    # removing outliers
+    outlier.color = "#F0E442",
+    alpha = 0.5
+  ) + ylab("CD4 Effector Score") + xlab("Severity") +
+  theme_minimal()  + theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold"))  + scale_fill_manual(values = c( "#bfe4ee","#fbd178","#F9c3bf")) +
+    coord_flip() +
+  geom_signif(comparisons = list(c("control", "severe"),c("control", "mild/remission"),c("mild/remission", "severe")), annotations = c("ns","***","***"),textsize = 6,fontface = "bold",
+              map_signif_level=TRUE,y_position = c(1.5,1.2,1.35)) 
+  dev.off()
+  
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/bloodatlas_cd4effectorbycondition_pre.jpeg",width=30,height=20,units="cm",res=300)
+cd4_df %>% 
+ggplot(aes(x = Severity, y = effectorscore0, fill = Severity)) +
+  
+  # add half-violin from {ggdist} package
+  stat_halfeye(
+    # adjust bandwidth
+    adjust = 10,
+    # move to the right
+    justification = -0.2,
+    # remove the slub interval
+    .width = 0,
+    point_colour = "#F0E442"
+  ) +
+  
+  geom_boxplot(
+    width = 0.2,
+    # removing outliers
+    outlier.color = "#F0E442",
+    alpha = 0.5
+  ) + ylab("CD4 Effector Score") + xlab("Severity") +
+  theme_minimal()  +  theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold")) + scale_fill_manual(values = c( "#bfe4ee","#fbd178","#F9c3bf")) +
+    coord_flip() +
+  geom_signif(comparisons = list(c("control", "severe"),c("control", "mild/remission"),c("mild/remission", "severe")), annotations = c("***","***","**"),textsize = 6,fontface = "bold",
+              map_signif_level=TRUE,y_position = c(1,0.7,0.85)) 
+  dev.off()
+```
+```{r}
+ret_memorycd4 = readRDS("~/Misc/B-Lightning/COVID_longitudinal/memorycd4_BLightning_results_CFS1_cutoff3.rds")
+cscore = 'CFS1'
+known.memory.upregulated.markers = c("PTPRC","SELL","CCR7","CD27","CD44")
+known.memory.downregulated.markers = c()
+```
+```{r Fig 5d; Supplementary Fig 5d}
+up_memory = ret_memorycd4[[2]][ret_memorycd4[[2]] %in% rownames(genelist)]
+dn_memory= ret_memorycd4[[3]][ret_memorycd4[[3]] %in% rownames(genelist)]
+known_up_memory = ret_memorycd4[[4]][ret_memorycd4[[4]] %in% rownames(genelist)]
+known_dn_memory= ret_memorycd4[[5]][ret_memorycd4[[5]] %in% rownames(genelist)]
+
+
+memoryscore0 = getscore(cscore,genelist[known_up_memory,],genelist[known_dn_memory,],
+                        covid19_blood_cd4_atlas@assays$RNA@counts[c(genelist[known_up_memory,],genelist[known_dn_memory,]),])
+
+memoryscore1 = getscore(cscore,genelist[up_memory,],genelist[dn_memory,],
+                        covid19_blood_cd4_atlas@assays$RNA@counts[c(genelist[up_memory,],genelist[dn_memory,]),])
+
+memoryscore2 = getscore(cscore,genelist[c(known_up_memory,up_memory),],genelist[c(known_dn_memory,dn_memory),],
+                        covid19_blood_cd4_atlas@assays$RNA@counts[c(genelist[c(known_up_memory,up_memory),],genelist[c(known_dn_memory,dn_memory),]),])
+
+
+cd4_df$memoryscore1 = memoryscore1
+cd4_df$memoryscore0 = memoryscore0
+cd4_df$memoryscore2= memoryscore2
+wilcox.test(cd4_df$memoryscore2[cd4_df$condition == 'severe'], y = cd4_df$memoryscore2[cd4_df$condition == 'control']) #***
+wilcox.test(cd4_df$memoryscore2[cd4_df$condition == 'control'], y = cd4_df$memoryscore2[cd4_df$condition == 'mild/remission']) #***
+wilcox.test(cd4_df$memoryscore2[cd4_df$condition == 'severe'], y = cd4_df$memoryscore2[cd4_df$condition == 'mild/remission'])#***
+
+
+wilcox.test(cd4_df$memoryscore1[cd4_df$condition == 'severe'], y = cd4_df$memoryscore1[cd4_df$condition == 'control']) #**
+wilcox.test(cd4_df$memoryscore1[cd4_df$condition == 'control'], y = cd4_df$memoryscore1[cd4_df$condition == 'mild/remission']) #***
+wilcox.test(cd4_df$memoryscore1[cd4_df$condition == 'severe'], y = cd4_df$memoryscore1[cd4_df$condition == 'mild/remission'])#***
+
+wilcox.test(cd4_df$memoryscore0[cd4_df$condition == 'severe'], y = cd4_df$memoryscore0[cd4_df$condition == 'control']) #***
+wilcox.test(cd4_df$memoryscore0[cd4_df$condition == 'control'], y = cd4_df$memoryscore0[cd4_df$condition == 'mild/remission']) #***
+wilcox.test(cd4_df$memoryscore0[cd4_df$condition == 'severe'], y = cd4_df$memoryscore0[cd4_df$condition == 'mild/remission'])#***
+
+
+library(ggplot2)
+library(ggdist)
+library(ggsignif)
+library(rstatix)
+
+pwc = cd4_df %>%
+  wilcox.test(len ~ dose, p.adjust.method = "bonferroni")
+
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/bloodatlas_cd4memorybycondition_post2.jpeg",width=30,height=20,units="cm",res=300)
+cd4_df %>% 
+ggplot(aes(x = Severity, y = memoryscore2, fill = Severity)) +
+  
+  # add half-violin from {ggdist} package
+  stat_halfeye(
+    # adjust bandwidth
+    adjust = 1.5,
+    # move to the right
+    justification = -0.2,
+    # remove the slub interval
+    .width = 0,
+    point_colour = "#F0E442"
+  ) +
+  
+  geom_boxplot(
+    width = 0.2,
+    # removing outliers
+    outlier.color = "#F0E442",
+    alpha = 0.5
+  ) + ylab("CD4 Memory Score") + xlab("Severity") +
+  theme_minimal()  +  theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold"))  + scale_fill_manual(values = c( "#bfe4ee","#fbd178","#F9c3bf")) +
+    coord_flip() +
+  geom_signif(comparisons = list(c("control", "severe"),c("control", "mild/remission"),c("mild/remission", "severe")), annotations = c("**","***","***"),textsize = 6,fontface = "bold",
+              map_signif_level=TRUE,y_position = c(1.3,1,1.15)) 
+ 
+  dev.off()
+  
+  
+  jpeg("~/Misc/B-Lightning/COVID_longitudinal/bloodatlas_cd4memorybycondition_post1.jpeg",width=30,height=20,units="cm",res=300)
+cd4_df %>% 
+ggplot(aes(x = Severity, y = memoryscore1, fill = Severity)) +
+  
+  # add half-violin from {ggdist} package
+  stat_halfeye(
+    # adjust bandwidth
+    adjust = 1.5,
+    # move to the right
+    justification = -0.2,
+    # remove the slub interval
+    .width = 0,
+    point_colour = "#F0E442"
+  ) +
+  
+  geom_boxplot(
+    width = 0.2,
+    # removing outliers
+    outlier.color = "#F0E442",
+    alpha = 0.5
+  ) + ylab("CD4 Memory Score") + xlab("Severity") +
+  theme_minimal()  +  theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold"))  + scale_fill_manual(values = c( "#bfe4ee","#fbd178","#F9c3bf")) +
+    coord_flip() +
+  geom_signif(comparisons = list(c("control", "severe"),c("control", "mild/remission"),c("mild/remission", "severe")), annotations = c("**","***","***"),textsize = 6,fontface = "bold",
+              map_signif_level=TRUE,y_position = c(1.3,1,1.15)) 
+  #geom_signif(comparisons = list(c("control", "severe"),c("control", "mild/remission"),c("mild/remission", "severe")), 
+              #map_signif_level=TRUE) +
+  dev.off()
+  
+  
+  
+  jpeg("~/Misc/B-Lightning/COVID_longitudinal/bloodatlas_cd4memorybycondition_pre.jpeg",width=30,height=20,units="cm",res=300)
+cd4_df %>% 
+ggplot(aes(x = Severity, y = memoryscore0, fill = Severity)) +
+  
+  # add half-violin from {ggdist} package
+  stat_halfeye(
+    # adjust bandwidth
+    adjust = 1.5,
+    # move to the right
+    justification = -0.2,
+    # remove the slub interval
+    .width = 0,
+    point_colour = "#F0E442"
+  ) +
+  
+  geom_boxplot(
+    width = 0.2,
+    # removing outliers
+    outlier.color = "#F0E442",
+    alpha = 0.5
+  ) + ylab("CD4 Memory Score") + xlab("Severity") +
+  theme_minimal()  + theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold"))  + scale_fill_manual(values = c( "#bfe4ee","#fbd178","#F9c3bf")) +
+    coord_flip() +
+  geom_signif(comparisons = list(c("control", "severe"),c("control", "mild/remission"),c("mild/remission", "severe")), annotations = c("***","***","***"),textsize = 6,fontface = "bold",
+              map_signif_level=TRUE,y_position = c(1.3,1.03,1.15)) 
+  dev.off()
+```
+#CD8
+
+```{r}
+ret_effectorcd8 = readRDS("~/Misc/B-Lightning/COVID_longitudinal/NEW_effectorcd8_BLightning_results_CFS1_cutoff3.rds")
+cscore = 'CFS1'
+```
+```{r Supplementary Fig 4c,6c}
+source("~/Misc/B-Lightning/BLightning_code/getscore.R")
+up_effector = ret_effectorcd8[[2]][ret_effectorcd8[[2]] %in% rownames(genelist)]
+dn_effector = ret_effectorcd8[[3]][ret_effectorcd8[[3]] %in% rownames(genelist)]
+known_up_effector = ret_effectorcd8[[4]][ret_effectorcd8[[4]] %in% rownames(genelist)]
+known_dn_effector = ret_effectorcd8[[5]][ret_effectorcd8[[5]] %in% rownames(genelist)]
+
+
+
+effectorscore1 = getscore(cscore,genelist[up_effector,],genelist[dn_effector,],
+                        covid19_blood_cd8_atlas@assays$RNA@counts[c(genelist[up_effector,],genelist[dn_effector,]),])
+effectorscore0 = getscore(cscore,genelist[known_up_effector,],genelist[known_dn_effector,],
+                        covid19_blood_cd8_atlas@assays$RNA@counts[c(genelist[known_up_effector,],genelist[known_dn_effector,]),])
+effectorscore2 = getscore(cscore,genelist[c(known_up_effector,up_effector),],genelist[c(known_dn_effector,dn_effector),],
+                        covid19_blood_cd8_atlas@assays$RNA@counts[c(genelist[c(known_up_effector,up_effector),],genelist[c(known_dn_effector,dn_effector),]),])
+
+
+cd8_df = as.data.frame(effectorscore1)
+cd8_df$effectorscore0 = effectorscore0
+cd8_df$effectorscore2 = effectorscore2
+cd8_metadata = covid19_blood_cd8_atlas@meta.data
+cd8_metadata = cd4_metadata[rownames(cd8_df),]
+cd8_df$disease_original=cd8_metadata$disease_original
+cd8_df$covidcondition = cd8_metadata$`COVID-19 Condition`
+cd8_df$condition = NA
+cd8_df$condition[cd8_df$disease_original == 'COVID-19 Severe'] = 'severe'
+cd8_df$condition[cd8_df$disease_original == 'COVID-19 Mild/Remission'] = 'mild/remission'
+cd8_df$condition[cd8_df$disease_original == 'Healthy'] = 'control'
+cd8_df$Severity = cd8_df$condition
+
+wilcox.test(cd8_df$effectorscore2[cd8_df$condition == 'control'],cd8_df$effectorscore2[cd8_df$condition == 'severe'])
+wilcox.test(cd8_df$effectorscore2[cd8_df$condition == 'control'],cd8_df$effectorscore2[cd8_df$condition == 'mild/remission'])
+wilcox.test(cd8_df$effectorscore2[cd8_df$condition == 'mild/remission'],cd8_df$effectorscore2[cd8_df$condition == 'severe'])
+
+wilcox.test(cd8_df$effectorscore1[cd8_df$condition == 'control'],cd8_df$effectorscore1[cd8_df$condition == 'severe'])
+wilcox.test(cd8_df$effectorscore1[cd8_df$condition == 'control'],cd8_df$effectorscore1[cd8_df$condition == 'mild/remission'])
+wilcox.test(cd8_df$effectorscore1[cd8_df$condition == 'mild/remission'],cd8_df$effectorscore1[cd8_df$condition == 'severe'])
+
+wilcox.test(cd8_df$effectorscore0[cd8_df$condition == 'control'],cd8_df$effectorscore0[cd8_df$condition == 'severe'])
+wilcox.test(cd8_df$effectorscore0[cd8_df$condition == 'control'],cd8_df$effectorscore0[cd8_df$condition == 'mild/remission'])
+wilcox.test(cd8_df$effectorscore0[cd8_df$condition == 'mild/remission'],cd8_df$effectorscore0[cd8_df$condition == 'severe'])
+
+library(ggplot2)
+library(ggdist)
+library(ggsignif)
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/bloodatlas_cd8effectorbycondition_post2.jpeg",width=30,height=20,units="cm",res=300)
+cd8_df %>% filter(!is.na(condition)) %>% 
+ggplot(aes(x = condition, y = effectorscore2, fill = Severity)) +
+  
+  # add half-violin from {ggdist} package
+  stat_halfeye(
+    # adjust bandwidth
+    adjust = 0.5,
+    # move to the right
+    justification = -0.2,
+    # remove the slub interval
+    .width = 0,
+    point_colour = "#F0E442"
+  ) +
+  
+  geom_boxplot(
+    width = 0.2,
+    # removing outliers
+    outlier.color = "#F0E442",
+    alpha = 0.5
+  ) + ylab("CD8 Effector Score") + xlab("Severity") +
+  theme_minimal()  + theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold")) + scale_fill_manual(values = c( "#bfe4ee","#fbd178","#F9c3bf")) + geom_signif(comparisons = list(c("mild/remission", "severe"),c("mild/remission","control"),c("severe","control")), 
+              map_signif_level=FALSE,y_position = c(0.7,0.65,0.8),textsize = 6,fontface = "bold",annotations = c("ns","ns","ns")) +
+    coord_flip() 
+  #geom_signif(comparisons = list(c("control", "severe"),c("control", "mild/remission"),c("mild/remission", "severe")), 
+              #map_signif_level=TRUE) +
+  dev.off()
+
+  jpeg("~/Misc/B-Lightning/COVID_longitudinal/bloodatlas_cd8effectorbycondition_post1.jpeg",width=30,height=20,units="cm",res=300)
+cd8_df %>% filter(!is.na(condition)) %>% 
+ggplot(aes(x = condition, y = effectorscore1, fill = Severity)) +
+  
+  # add half-violin from {ggdist} package
+  stat_halfeye(
+    # adjust bandwidth
+    adjust = 0.5,
+    # move to the right
+    justification = -0.2,
+    # remove the slub interval
+    .width = 0,
+    point_colour = "#F0E442"
+  ) +
+  
+  geom_boxplot(
+    width = 0.2,
+    # removing outliers
+    outlier.color = "#F0E442",
+    alpha = 0.5
+  ) + ylab("CD8 Effector Score") + xlab("Severity") +
+  theme_minimal()  + theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold")) + scale_fill_manual(values = c( "#bfe4ee","#fbd178","#F9c3bf")) + geom_signif(comparisons = list(c("mild/remission", "severe"),c("mild/remission","control"),c("severe","control")), 
+              map_signif_level=FALSE,y_position = c(0.7,0.65,0.8),textsize = 6,fontface = "bold",annotations = c("ns","ns","ns"))  +  coord_flip()
+  #geom_signif(comparisons = list(c("control", "severe"),c("control", "mild/remission"),c("mild/remission", "severe")), 
+              #map_signif_level=TRUE) +
+  dev.off()
+
+  
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/bloodatlas_cd8effectorbycondition_pre.jpeg",width=30,height=20,units="cm",res=300)
+cd8_df %>% filter(!is.na(condition)) %>% 
+ggplot(aes(x = condition, y = effectorscore0, fill = Severity)) +
+  
+  # add half-violin from {ggdist} package
+  stat_halfeye(
+    # adjust bandwidth
+    adjust = 0.5,
+    # move to the right
+    justification = -0.2,
+    # remove the slub interval
+    .width = 0,
+    point_colour = "#F0E442"
+  ) +
+  
+  geom_boxplot(
+    width = 0.2,
+    # removing outliers
+    outlier.color = "#F0E442",
+    alpha = 0.5
+  ) + ylab("CD8 Effector Score") + xlab("Severity") +
+  theme_minimal()  + theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold")) + scale_fill_manual(values = c( "#bfe4ee","#fbd178","#F9c3bf")) + geom_signif(comparisons = list(c("mild/remission", "severe"),c("mild/remission","control"),c("severe","control")), 
+              map_signif_level=FALSE,y_position = c(0.7,0.65,0.8),textsize = 6,fontface = "bold",annotations = c("ns","ns","ns")) +
+    coord_flip() 
+  #geom_signif(comparisons = list(c("control", "severe"),c("control", "mild/remission"),c("mild/remission", "severe")), 
+              #map_signif_level=TRUE) +
+  dev.off()
+cd8_df %>% filter(!is.na(condition)) %>% 
+ggplot() + geom_density(aes(x =effectorscore1, colour = condition))
+  
+```
+```{r}
+ret_memorycd8 = readRDS("~/Misc/B-Lightning/COVID_longitudinal/NEW_memorycd8_BLightning_results_CFS1_cutoff4.rds")
+cscore = 'CFS1'
+```
+```{r Supplementary Fig 4d,6d}
+known_up_memory = ret_memorycd8[[4]][ret_memorycd8[[4]] %in% rownames(genelist)]
+known_dn_memory= ret_memorycd8[[5]][ret_memorycd8[[5]] %in% rownames(genelist)]
+
+up_memory = ret_memorycd8[[2]][ret_memorycd8[[2]] %in% rownames(genelist)]
+dn_memory= ret_memorycd8[[3]][ret_memorycd8[[3]] %in% rownames(genelist)]
+
+
+memoryscore0 = getscore(cscore,genelist[known_up_memory,],genelist[known_dn_memory,],
+                        covid19_blood_cd8_atlas@assays$RNA@counts[c(genelist[known_up_memory,],genelist[known_dn_memory,]),])
+
+memoryscore1 = getscore(cscore,genelist[up_memory,],genelist[dn_memory,],
+                        covid19_blood_cd8_atlas@assays$RNA@counts[c(genelist[up_memory,],genelist[dn_memory,]),])
+
+memoryscore2 = getscore(cscore,genelist[c(known_up_memory,up_memory),],genelist[c(known_dn_memory,dn_memory),],
+                        covid19_blood_cd8_atlas@assays$RNA@counts[c(genelist[c(known_up_memory,up_memory),],genelist[c(known_dn_memory,dn_memory),]),])
+
+cd8_df$memoryscore0 = memoryscore0
+cd8_df$memoryscore1 = memoryscore1
+cd8_df$memoryscore2 = memoryscore2
+
+wilcox.test(cd8_df$memoryscore2[cd8_df$condition == 'severe'],cd8_df$memoryscore2[cd8_df$condition == 'control'])#ns
+wilcox.test(cd8_df$memoryscore2[cd8_df$condition == 'control'],cd8_df$memoryscore2[cd8_df$condition == 'mild/remission'])#ns
+wilcox.test(cd8_df$memoryscore2[cd8_df$condition == 'severe'],cd8_df$memoryscore2[cd8_df$condition == 'mild/remission']) #ns
+
+wilcox.test(cd8_df$memoryscore1[cd8_df$condition == 'severe'],cd8_df$memoryscore1[cd8_df$condition == 'control'])#ns
+wilcox.test(cd8_df$memoryscore1[cd8_df$condition == 'control'],cd8_df$memoryscore1[cd8_df$condition == 'mild/remission'])#ns
+wilcox.test(cd8_df$memoryscore1[cd8_df$condition == 'severe'],cd8_df$memoryscore1[cd8_df$condition == 'mild/remission']) #ns
+
+
+wilcox.test(cd8_df$memoryscore0[cd8_df$condition == 'severe'],cd8_df$memoryscore0[cd8_df$condition == 'control'])#ns
+wilcox.test(cd8_df$memoryscore0[cd8_df$condition == 'control'],cd8_df$memoryscore0[cd8_df$condition == 'mild/remission'])#ns
+wilcox.test(cd8_df$memoryscore0[cd8_df$condition == 'severe'],cd8_df$memoryscore0[cd8_df$condition == 'mild/remission']) #ns
+
+library(ggplot2)
+library(ggdist)
+library(ggsignif)
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/bloodatlas_cd8memorybycondition_post2.jpeg",width=30,height=20,units="cm",res=300)
+cd8_df %>% filter(!is.na(condition)) %>% 
+ggplot(aes(x = condition, y = memoryscore2, fill = condition)) +
+  
+  # add half-violin from {ggdist} package
+  stat_halfeye(
+    # adjust bandwidth
+    #adjust = 0.5,
+    # move to the right
+    justification = -0.2,
+    # remove the slub interval
+    .width = 0,
+    point_colour = "#F0E442"
+  ) +
+  
+  geom_boxplot(
+    width = 0.2,
+    # removing outliers
+    outlier.color = "#F0E442",
+    alpha = 0.5
+  ) + ylab("CD8 Memory Score") + xlab("Severity") +
+  theme_minimal()  + theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold")) + scale_fill_manual(values = c( "#bfe4ee","#fbd178","#F9c3bf")) + geom_signif(comparisons = list(c("mild/remission", "severe"),c("mild/remission","control"),c("severe","control")), 
+              map_signif_level=FALSE,y_position = c(0.7,0.65,0.8),textsize = 6,fontface = "bold",annotations = c("ns","ns","ns")) +
+    coord_flip() 
+  #geom_signif(comparisons = list(c("control", "severe"),c("control", "mild/remission"),c("mild/remission", "severe")), 
+              #map_signif_level=TRUE) +
+  dev.off()
+  
+  jpeg("~/Misc/B-Lightning/COVID_longitudinal/bloodatlas_cd8memorybycondition_post1.jpeg",width=30,height=20,units="cm",res=300)
+cd8_df %>% filter(!is.na(condition)) %>% 
+ggplot(aes(x = condition, y = memoryscore1, fill = condition)) +
+  
+  # add half-violin from {ggdist} package
+  stat_halfeye(
+    # adjust bandwidth
+    #adjust = 0.5,
+    # move to the right
+    justification = -0.2,
+    # remove the slub interval
+    .width = 0,
+    point_colour = "#F0E442"
+  ) +
+  
+  geom_boxplot(
+    width = 0.2,
+    # removing outliers
+    outlier.color = "#F0E442",
+    alpha = 0.5
+  ) + ylab("CD8 Memory Score") + xlab("Severity") +
+  theme_minimal()  + theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold")) + scale_fill_manual(values = c( "#bfe4ee","#fbd178","#F9c3bf")) + geom_signif(comparisons = list(c("mild/remission", "severe"),c("mild/remission","control"),c("severe","control")), 
+              map_signif_level=FALSE,y_position = c(0.7,0.65,0.8),textsize = 6,fontface = "bold",annotations = c("ns","ns","ns")) +
+    coord_flip() 
+  #geom_signif(comparisons = list(c("control", "severe"),c("control", "mild/remission"),c("mild/remission", "severe")), 
+              #map_signif_level=TRUE) +
+  dev.off()
+  
+  
+jpeg("~/Misc/B-Lightning/COVID_longitudinal/bloodatlas_cd8memorybycondition_pre.jpeg",width=30,height=20,units="cm",res=300)
+cd8_df %>% filter(!is.na(condition)) %>% 
+ggplot(aes(x = condition, y = memoryscore0, fill = condition)) +
+  
+  # add half-violin from {ggdist} package
+  stat_halfeye(
+    # adjust bandwidth
+    #adjust = 0.5,
+    # move to the right
+    justification = -0.2,
+    # remove the slub interval
+    .width = 0,
+    point_colour = "#F0E442"
+  ) +
+  
+  geom_boxplot(
+    width = 0.2,
+    # removing outliers
+    outlier.color = "#F0E442",
+    alpha = 0.5
+  ) + ylab("CD8 Memory Score") + xlab("Severity") +
+  theme_minimal()  + theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold")) + scale_fill_manual(values = c( "#bfe4ee","#fbd178","#F9c3bf")) + geom_signif(comparisons = list(c("mild/remission", "severe"),c("mild/remission","control"),c("severe","control")), 
+              map_signif_level=FALSE,y_position = c(0.7,0.65,0.8),textsize = 6,fontface = "bold",annotations = c("ns","ns","ns")) +
+    coord_flip() 
+  #geom_signif(comparisons = list(c("control", "severe"),c("control", "mild/remission"),c("mild/remission", "severe")), 
+              #map_signif_level=TRUE) +
+  dev.off()
+```
