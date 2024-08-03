@@ -20,7 +20,7 @@ library('ggplot2')
 library('reshape2')
 ```
 ```{r}
-load("~/seedsforsimulations.RData")
+load("data/seedsforsimulations.RData")
 ```
 ```{r Functions for generate simulated datasets}
 logistic <- function (x, x0, k){
@@ -241,7 +241,7 @@ simulation <- function(nCells = 6000, nGenes = 5000, lib.loc = 9.3, lib.scale = 
                          drop = TRUE, dropout.mid = -2, dropout.shape = -1,seed = seed)
   
 ```
-```{r Fig.2a simulation 1ct umap}
+```{r simulation 1ct umap}
 countdat <- data_sim$counts
 rownames(countdat) <- paste("gene", 1:p)  #gene-features
 colnames(countdat) <- paste("cell", 1:n)  #cell
@@ -310,7 +310,7 @@ dev.off()
                          drop = TRUE, dropout.mid = -2, dropout.shape = -1,seed = seed)
   
 ```
-```{r Fig.2b simulation 4ct umap}
+```{r simulation 4ct umap}
 countdat <- data_sim$counts
 rownames(countdat) <- paste("gene", 1:p)  #gene-features
 colnames(countdat) <- paste("cell", 1:n)  #cell
@@ -380,7 +380,7 @@ dev.off()
                          drop = TRUE, dropout.mid = -2, dropout.shape = -1,seed = seed)
   
 ```
-```{r Fig.2c simulation 4ct v2 umap}
+```{r simulation 4ct v2 umap}
 countdat <- data_sim$counts
 rownames(countdat) <- paste("gene", 1:p)  #gene-features
 colnames(countdat) <- paste("cell", 1:n)  #cell
@@ -450,7 +450,7 @@ dev.off()
                          drop = TRUE, dropout.mid = -2, dropout.shape = -1,seed = seed)
   
 ```
-```{r Fig.2d simulation 8ct umap}
+```{r simulation 8ct umap}
 countdat <- data_sim$counts
 rownames(countdat) <- paste("gene", 1:p)  #gene-features
 colnames(countdat) <- paste("cell", 1:n)  #cell
@@ -506,25 +506,25 @@ umap_8ct %>% ggplot(aes(x = UMAP1,y = UMAP2)) + geom_point(size = 2,aes(colour =
 dev.off()
 ```
 ```{r Results Loading}
-load("results/GF1ct_10%_1030_results.RData")
+load("data/GF1ct_10%_1030_results.RData")
 GF_Records1ct = Records1ct
-load("results/GF4ct_10%_1030_results.RData")
+load("data/GF4ct_10%_1030_results.RData")
 GF_Records4ct = Records4ct
-load("results/GF4ct_v2_10%_1030_results.RData")
+load("data/GF4ct_v2_10%_1030_results.RData")
 GF_Records4ct_v2 = Records4ct_v2
-load("results/GF8ct_10%_1030_results.RData")
+load("data/GF8ct_10%_1030_results.RData")
 GF_Records8ct = Records8ct
 
 
-load("results/Simulation1ct_10%_1030_results.RData") #Records1ct
-load("results/Simulation4ct_10%_1030_results2.RData") #Records4ct
-load("results/Simulation4ct_v2_10%_1030_results2.RData")#Records4ct_v2
-load("results/Simulation8ct_10%_1030_results.RData")#Records8ct
+load("data/Simulation1ct_10%_1030_results.RData") #Records1ct
+load("data/Simulation4ct_10%_1030_results2.RData") #Records4ct
+load("data/Simulation4ct_v2_10%_1030_results2.RData")#Records4ct_v2
+load("data/Simulation8ct_10%_1030_results.RData")#Records8ct
 
-load("results/MAST1ct_10%_1030_results.RData")#Traditional_Records1ct_default
-load("results/MAST4ct_10%_1030_results.RData")#Traditional_Records4ct
-load("results/MAST4ct_v2_10%_1030_results.RData")#Traditional_Records4ct_v2
-load("results/MAST8ct_10%_1030_results.RData")#Traditional_Records4ct_v2
+load("data/MAST1ct_10%_1030_results.RData")#Traditional_Records1ct_default
+load("data/MAST4ct_10%_1030_results.RData")#Traditional_Records4ct
+load("data/MAST4ct_v2_10%_1030_results.RData")#Traditional_Records4ct_v2
+load("data/MAST8ct_10%_1030_results.RData")#Traditional_Records4ct_v2
 
 ```
 ```{r Blightning_Simulation_1ct}
@@ -535,7 +535,8 @@ df = data.frame(seed = integer(),
                 TP = integer(),
                 FDR = vector(),
                 sen = vector(),
-                F1 = vector()
+                F1 = vector(),
+                TDR = vector()
                  )
 
 for (i in 0:(length(Records1ct)/5 - 1)){
@@ -556,6 +557,7 @@ for (i in 0:(length(Records1ct)/5 - 1)){
   
   
   FDR = FP/(FP + TP)
+  TDR = 1 - FDR
   sen = TP/(TP + FN)
   
   F1 = 2*TP/(2*TP + FP + FN)
@@ -567,7 +569,8 @@ for (i in 0:(length(Records1ct)/5 - 1)){
                            TP,
                            FDR,
                            sen,
-                           F1)
+                           F1,
+                 TDR)
 }
 Simulation1ct_Results = df
 #save(Simulation1ct_Results,file = "Simulation1ct_Restuls.RData")
@@ -580,7 +583,8 @@ df = data.frame(seed = integer(),
                 TP = integer(),
                 FDR = vector(),
                 sen = vector(),
-                F1 = vector()
+                F1 = vector(),
+                TDR = vector()
                  )
 
 for (i in 0:(length(Records4ct)/5 - 1)){
@@ -601,6 +605,7 @@ for (i in 0:(length(Records4ct)/5 - 1)){
   
   
   FDR = FP/(FP + TP)
+  TDR = 1 - FDR
   sen = TP/(TP + FN)
   
   F1 = 2*TP/(2*TP + FP + FN)
@@ -612,7 +617,8 @@ for (i in 0:(length(Records4ct)/5 - 1)){
                            TP,
                            FDR,
                            sen,
-                           F1)
+                           F1,
+                 TDR)
 }
 Simulation4ct_Results = df
 
@@ -624,7 +630,8 @@ df = data.frame(seed = integer(),
                 TP = integer(),
                 FDR = vector(),
                 sen = vector(),
-                F1 = vector()
+                F1 = vector(),
+                TDR = vector()
                  )
 
 for (i in 0:(length(Records4ct_v2)/5 - 1)){
@@ -645,6 +652,7 @@ for (i in 0:(length(Records4ct_v2)/5 - 1)){
   
   
   FDR = FP/(FP + TP)
+  TDR = 1 - FDR
   sen = TP/(TP + FN)
   
   F1 = 2*TP/(2*TP + FP + FN)
@@ -656,7 +664,8 @@ for (i in 0:(length(Records4ct_v2)/5 - 1)){
                            TP,
                            FDR,
                            sen,
-                           F1)
+                           F1,
+                 TDR)
 }
 Simulation4ct_v2_Results = df
 
@@ -669,7 +678,8 @@ df = data.frame(seed = integer(),
                 TP = integer(),
                 FDR = vector(),
                 sen = vector(),
-                F1 = vector()
+                F1 = vector(),
+                TDR = vector()
                  )
 
 for (i in 0:(length(Records8ct)/5 - 1)){
@@ -690,6 +700,7 @@ for (i in 0:(length(Records8ct)/5 - 1)){
   
   
   FDR = FP/(FP + TP)
+  TDR = 1 - FDR
   sen = TP/(TP + FN)
   
   F1 = 2*TP/(2*TP + FP + FN)
@@ -701,11 +712,13 @@ for (i in 0:(length(Records8ct)/5 - 1)){
                            TP,
                            FDR,
                            sen,
-                           F1)
+                           F1,
+                 TDR)
 }
 Simulation8ct_Results = df
 
 ```
+
 ```{r Tradition1_Simulation_1ct}
 #load("MAST1ct_10%_1030_results.RData")
 df = data.frame(seed = integer(),
@@ -714,7 +727,8 @@ df = data.frame(seed = integer(),
                 TP = integer(),
                 FDR = vector(),
                 sen = vector(),
-                F1 = vector()
+                F1 = vector(),
+                TDR = vector()
                  )
 
 for (i in 0:(length(Traditional_Records1ct_default)/5 - 1)){
@@ -737,6 +751,7 @@ for (i in 0:(length(Traditional_Records1ct_default)/5 - 1)){
   TN = 5000 - length(unique(c(c(Traditional_Records1ct_default[[5*i + 2]],Traditional_Records1ct_default[[5*i + 3]]), truth)))
   
   FDR = FP/(FP + TP)
+  TDR = 1 - FDR
   sen = TP/(TP + FN)
   F1 = 2*TP/(2*TP + FP + FN)
   
@@ -747,7 +762,8 @@ for (i in 0:(length(Traditional_Records1ct_default)/5 - 1)){
                            TP,
                            FDR,
                            sen,
-                           F1)
+                           F1,
+                 TDR)
 }
 Tradition1ct_Results = df
 ```
@@ -759,7 +775,8 @@ df = data.frame(seed = integer(),
                 TP = integer(),
                 FDR = vector(),
                 sen = vector(),
-                F1 = vector()
+                F1 = vector(),
+                TDR = vector()
                  )
 
 for (i in 0:(length(Traditional_Records4ct)/5 - 1)){
@@ -781,6 +798,7 @@ for (i in 0:(length(Traditional_Records4ct)/5 - 1)){
   
   
   FDR = FP/(FP + TP)
+  TDR = 1 - FDR
   sen = TP/(TP + FN)
   F1 = 2*TP/(2*TP + FP + FN)
   
@@ -791,7 +809,8 @@ for (i in 0:(length(Traditional_Records4ct)/5 - 1)){
                            TP,
                            FDR,
                            sen,
-                           F1)
+                           F1,
+                 TDR)
 }
 Tradition4ct_Results = df
 
@@ -804,7 +823,8 @@ df = data.frame(seed = integer(),
                 TP = integer(),
                 FDR = vector(),
                 sen = vector(),
-                F1 = vector()
+                F1 = vector(),
+                TDR = vector()
                  )
 
 for (i in 0:99){
@@ -824,6 +844,7 @@ for (i in 0:99){
   TN = 5000 - length(unique(c(setdiff(c(Traditional_Records4ct_v2[[5*i + 2]],Traditional_Records4ct_v2[[5*i + 3]]),paste("gene",201:210)), truth)))
   
   FDR = FP/(FP + TP)
+  TDR = 1 - FDR
   sen = TP/(TP + FN)
   
   F1 = 2*TP/(2*TP + FP + FN)
@@ -835,7 +856,8 @@ for (i in 0:99){
                            TP,
                            FDR,
                            sen,
-                           F1)
+                           F1,
+                 TDR)
 }
 Tradition4ct_v2_Results = df
 
@@ -848,7 +870,8 @@ df = data.frame(seed = integer(),
                 TP = integer(),
                 FDR = vector(),
                 sen = vector(),
-                F1 = vector()
+                F1 = vector(),
+                TDR = vector()
                  )
 
 for (i in 0:(length(Traditional_Records8ct)/5 - 1)){
@@ -870,6 +893,7 @@ for (i in 0:(length(Traditional_Records8ct)/5 - 1)){
   
   
   FDR = FP/(FP + TP)
+  TDR = 1 - FDR
   sen = TP/(TP + FN)
   F1 = 2*TP/(2*TP + FP + FN)
   
@@ -880,12 +904,14 @@ for (i in 0:(length(Traditional_Records8ct)/5 - 1)){
                            TP,
                            FDR,
                            sen,
-                           F1)
+                           F1,
+                 TDR)
 }
 
 Tradition8ct_Results = df
 
 ```
+
 ```{r GF_Simulation_1ct}
 
 df = data.frame(seed = integer(),
@@ -894,7 +920,8 @@ df = data.frame(seed = integer(),
                 TP = integer(),
                 FDR = vector(),
                 sen = vector(),
-                F1 = vector()
+                F1 = vector(),
+                TDR = vector()
                  )
 
 for (i in 0:(length(GF_Records1ct)/5 - 1)){
@@ -919,6 +946,7 @@ for (i in 0:(length(GF_Records1ct)/5 - 1)){
   
   
   FDR = FP/(FP + TP)
+  TDR = 1 - FDR
   sen = TP/(TP + FN)
   
   F1 = 2*TP/(2*TP + FP + FN)
@@ -930,7 +958,8 @@ for (i in 0:(length(GF_Records1ct)/5 - 1)){
                            TP,
                            FDR,
                            sen,
-                           F1)
+                           F1,
+                  TDR)
 }
 GF1ct_Results = df
 ```
@@ -942,7 +971,8 @@ df = data.frame(seed = integer(),
                 TP = integer(),
                 FDR = vector(),
                 sen = vector(),
-                F1 = vector()
+                F1 = vector(),
+                TDR = vector()
                  )
 
 for (i in 0:(length(GF_Records4ct)/5 - 1)){
@@ -967,6 +997,7 @@ for (i in 0:(length(GF_Records4ct)/5 - 1)){
   
   
   FDR = FP/(FP + TP)
+  TDR = 1 - FDR
   sen = TP/(TP + FN)
   
   F1 = 2*TP/(2*TP + FP + FN)
@@ -978,7 +1009,8 @@ for (i in 0:(length(GF_Records4ct)/5 - 1)){
                            TP,
                            FDR,
                            sen,
-                           F1)
+                           F1,
+                  TDR)
 }
 GF4ct_Results = df
 
@@ -991,7 +1023,8 @@ df = data.frame(seed = integer(),
                 TP = integer(),
                 FDR = vector(),
                 sen = vector(),
-                F1 = vector()
+                F1 = vector(),
+                TDR = vector()
                  )
 
 for (i in 0:(length(GF_Records4ct_v2)/5 - 1)){
@@ -1016,6 +1049,7 @@ for (i in 0:(length(GF_Records4ct_v2)/5 - 1)){
   
   
   FDR = FP/(FP + TP)
+  TDR = 1 - FDR
   sen = TP/(TP + FN)
   
   F1 = 2*TP/(2*TP + FP + FN)
@@ -1027,7 +1061,8 @@ for (i in 0:(length(GF_Records4ct_v2)/5 - 1)){
                            TP,
                            FDR,
                            sen,
-                           F1)
+                           F1,
+                  TDR)
 }
 GF4ct_v2_Results = df
 
@@ -1040,7 +1075,8 @@ df = data.frame(seed = integer(),
                 TP = integer(),
                 FDR = vector(),
                 sen = vector(),
-                F1 = vector()
+                F1 = vector(),
+                TDR = vector()
                  )
 
 for (i in 0:(length(GF_Records8ct)/5 - 1)){
@@ -1065,6 +1101,7 @@ for (i in 0:(length(GF_Records8ct)/5 - 1)){
   
   
   FDR = FP/(FP + TP)
+  TDR = 1 - FDR
   sen = TP/(TP + FN)
   
   F1 = 2*TP/(2*TP + FP + FN)
@@ -1076,54 +1113,56 @@ for (i in 0:(length(GF_Records8ct)/5 - 1)){
                            TP,
                            FDR,
                            sen,
-                           F1)
+                           F1,
+                  TDR)
 }
 GF8ct_Results = df
 
 ```
+
 ```{r}
 melt_1ct =  melt(Simulation1ct_Results, id.vars='seed', 
-                measure.vars=c("FDR","sen", "F1"))
+                measure.vars=c("FDR","sen", "F1","TDR"))
 melt_1ct$source = "S1: B-Lightning"
 
 melt_4ct =  melt(Simulation4ct_Results, id.vars='seed', 
-                measure.vars=c("FDR","sen", "F1"))
+                measure.vars=c("FDR","sen", "F1","TDR"))
 melt_4ct$source = "S2: B-Lightning"
 
 melt_4ct_v2 =  melt(Simulation4ct_v2_Results, id.vars='seed', 
-                measure.vars=c("FDR","sen", "F1"))
+                measure.vars=c("FDR","sen", "F1","TDR"))
 melt_4ct_v2$source = "S3: B-Lightning"
 
 melt_1ct_traditional =  melt(Tradition1ct_Results, id.vars='seed', 
-                measure.vars=c("FDR","sen", "F1"))
+                measure.vars=c("FDR","sen", "F1","TDR"))
 melt_1ct_traditional$source = "S1: DGE"
 
-melt_4ct_traditional = melt(Tradition4ct_Results,id.vars = 'seed', measure.vars=c("FDR","sen", "F1"))
+melt_4ct_traditional = melt(Tradition4ct_Results,id.vars = 'seed', measure.vars=c("FDR","sen", "F1","TDR"))
 melt_4ct_traditional$source = "S2: DGE"
 
-melt_4ct_v2_traditional = melt(Tradition4ct_v2_Results,id.vars = 'seed', measure.vars=c("FDR","sen", "F1"))
+melt_4ct_v2_traditional = melt(Tradition4ct_v2_Results,id.vars = 'seed', measure.vars=c("FDR","sen", "F1","TDR"))
 melt_4ct_v2_traditional$source = "S3: DGE"
 
 melt_1ct_GF =  melt(GF1ct_Results, id.vars='seed', 
-                measure.vars=c("FDR","sen", "F1"))
+                measure.vars=c("FDR","sen", "F1","TDR"))
 melt_1ct_GF$source = "S1: GeneFishing"
 
-melt_4ct_GF = melt(GF4ct_Results,id.vars = 'seed', measure.vars=c("FDR","sen", "F1"))
+melt_4ct_GF = melt(GF4ct_Results,id.vars = 'seed', measure.vars=c("FDR","sen", "F1","TDR"))
 melt_4ct_GF$source = "S2: GeneFishing"
 
-melt_4ct_v2_GF = melt(GF4ct_v2_Results,id.vars = 'seed', measure.vars=c("FDR","sen", "F1"))
+melt_4ct_v2_GF = melt(GF4ct_v2_Results,id.vars = 'seed', measure.vars=c("FDR","sen", "F1","TDR"))
 melt_4ct_v2_GF$source = "S3: GeneFishing"
 
 melt_8ct =  melt(Simulation8ct_Results, id.vars='seed', 
-                measure.vars=c("FDR","sen", "F1"))
+                measure.vars=c("FDR","sen", "F1","TDR"))
 melt_8ct$source = "S4: B-Lightning"
 
 melt_8ct_traditional =  melt(Tradition8ct_Results, id.vars='seed', 
-                measure.vars=c("FDR","sen", "F1"))
+                measure.vars=c("FDR","sen", "F1","TDR"))
 melt_8ct_traditional$source = "S4: DGE"
 
 melt_8ct_GF =  melt(GF8ct_Results, id.vars='seed', 
-                measure.vars=c("FDR","sen", "F1"))
+                measure.vars=c("FDR","sen", "F1","TDR"))
 melt_8ct_GF$source = "S4: GeneFishing"
 
 
@@ -1131,19 +1170,40 @@ melt_8ct_GF$source = "S4: GeneFishing"
 
 melt = rbind(melt_1ct,melt_1ct_traditional,melt_1ct_GF,melt_4ct,melt_4ct_traditional,melt_4ct_GF,melt_4ct_v2,melt_4ct_v2_traditional,melt_4ct_v2_GF,melt_8ct,melt_8ct_traditional,melt_8ct_GF)
 
+melt$xlabs[melt$variable == "TDR"] = "TDR"
 melt$xlabs[melt$variable == "FDR"] = "FDR"
 melt$xlabs[melt$variable == "sen"] = "Sensitivity"
 melt$xlabs[melt$variable == "F1"] = "F1"
 melt$method = substring(melt$source,4)
 
+# creating a plot
+
+melt  %>% 
+ggplot() + 
+geom_boxplot(aes(x=factor(xlabs,level=c('FDR(Up)', 'FDR(Down)', 'Sensitivity(Up)', 'Sensitivity(Down)',"Specificity(Up)","Specificity(Down)",'F1(Up)','F1(Down)')), y=value, fill = source),position = position_dodge2(preserve = "single"),width = 0.4)  +
+  theme_minimal() + xlab("Statistics") + theme(legend.position="bottom") +
+  scale_fill_manual(values=c("#FF6F00", "#FFB300","#FFD54F","#1565C0", "#64B5F6","#90CAF9","#33691E", "#7CB342","#9CCC65","#8E24AA", "#9575CD","#B39DDB"))
+  
+  #scale_fill_manual(values=c("#FF6F00", "#FFB300","#1565C0", "#64B5F6","#33691E", "#7CB342","#F06292", "#9575CD"))
+  
+  
+  #scale_fill_brewer(palette="Paired",direction = -1)+ labs(fill="Senario / method")
+  
+  
+  #scale_fill_brewer(palette="Paired")
+  
+  
+  #https://www.r-bloggers.com/2018/12/having-bit-of-party-with-material-colour-palette/
+  #scale_fill_manual(values=c("#FF6F00", "#FFB300","#1565C0", "#64B5F6","#33691E", "#7CB342","#F06292", "#9575CD")) 
+  
 ```
-```{r Fig.2e boxplots facet}
+```{r boxplots facet}
 melt$facet = substring(melt$source,1,2)
 
-#jpeg("simulations_boxplots.jpeg", width=25,height=25,units="cm",res=300)
-melt  %>% 
+jpeg("simulations_boxplots.jpeg", width=25,height=25,units="cm",res=300)
+melt  %>% filter(variable != 'FDR') %>% 
 ggplot() + facet_wrap(~ facet,ncol = 2) +
-geom_boxplot(aes(x=factor(xlabs,level=c('FDR', 'Sensitivity','F1')), y=value, color = method),position = position_dodge2(preserve = "single"),width = 0.7,lwd = 1.1)  +
+geom_boxplot(aes(x=factor(xlabs,level=c('TDR', 'Sensitivity','F1')), y=value, color = method),position = position_dodge2(preserve = "single"),width = 0.7,lwd = 1.1)  +
   theme_minimal() + xlab("") + theme(legend.position="bottom") +ylab("")+
   #scale_fill_manual(values=c( "#FFB300",  "#7CB342","#64B5F6")) + 
   scale_colour_manual(values=c( "#FF6F00",  "#7CB342","#64B5F6")) +
@@ -1154,7 +1214,8 @@ geom_boxplot(aes(x=factor(xlabs,level=c('FDR', 'Sensitivity','F1')), y=value, co
   axis.text.x = element_text(size = 18,face = "bold"),
   legend.title=element_text(size=20,face = "bold"), 
     legend.text=element_text(size=18,face = "bold")) + labs(color = "") + guides(colour = guide_legend(override.aes = list(size=10)))
-#dev.off()
+dev.off()
+
 
 ```
 
