@@ -1170,9 +1170,9 @@ melt_8ct_GF$source = "S4: GeneFishing"
 
 melt = rbind(melt_1ct,melt_1ct_traditional,melt_1ct_GF,melt_4ct,melt_4ct_traditional,melt_4ct_GF,melt_4ct_v2,melt_4ct_v2_traditional,melt_4ct_v2_GF,melt_8ct,melt_8ct_traditional,melt_8ct_GF)
 
-melt$xlabs[melt$variable == "TDR"] = "TDR"
+melt$xlabs[melt$variable == "TDR"] = "Precision"
 melt$xlabs[melt$variable == "FDR"] = "FDR"
-melt$xlabs[melt$variable == "sen"] = "Sensitivity"
+melt$xlabs[melt$variable == "sen"] = "Recall"
 melt$xlabs[melt$variable == "F1"] = "F1"
 melt$method = substring(melt$source,4)
 
