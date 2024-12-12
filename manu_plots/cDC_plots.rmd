@@ -1,0 +1,85 @@
+---
+title: "validation"
+output: html_document
+date: "2024-11-15"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ComplexHeatmap)
+
+library(Seurat)
+options(Seurat.object.assay.version = 'v3')
+library(clusterProfiler)
+library(wordcloud)
+organism = "org.Dm.eg.db"
+#BiocManager::install(organism, character.only = TRUE)
+library(organism, character.only = TRUE)
+library(ReactomePA)
+library(org.Hs.eg.db)
+library(AnnotationDbi)
+library(ggplot2)
+```
+
+
+
+```{r cDC in GSE167036 Liu BC data}
+GSE167036.DC.so = readRDS('/data/GSE167036.DC.so.rds')
+cDC.ret = readRDS('/data/cDC.perc92.cutoff5.ret.rds')
+source("/data/getscore.R")
+cDC.Liu.df = GSE167036.DC.so@meta.data
+cDC.Liu.df$sample_type = GSE167036.metadata[rownames(cDC.Liu.df),"sample_type"]
+cDC.Liu.df$bc_type = GSE167036.metadata[rownames(cDC.Liu.df),"bc_type"]
+cDC.Liu.df$sample_type2 = paste(cDC.Liu.df$bc_type ,cDC.Liu.df$sample_type)
+
+GSE167036.DC.so$ER = GSE167036.metadata[colnames(GSE167036.DC.so),"ER_statu"]
+GSE167036.DC.so$Her2 = GSE167036.metadata[colnames(GSE167036.DC.so),"Her2_statu"]
+GSE167036.DC.so$sample_type = GSE167036.metadata[colnames(GSE167036.DC.so),"sample_type"]
+
+GSE167036.DC.so$sample_type2 = cDC.Liu.df[colnames(GSE167036.DC.so),"sample_type2"]
+GSE167036.DC.so = ScaleData(GSE167036.DC.so)
+sorted.cDC.ret = c("AIF1","MS4A6A","C1orf162","FCER1G","HLA-DQA1","CAPG","ALDH2","IFI30","PLAUR","C15orf48","PPT1","STXBP2","C1QA","VSIG4","HLA-DRB1","FBP1","CST3","HLA-DRB5")
+immuneresponse = c("AIF1","MS4A6A","FCER1G","C1QA","VSIG4","IFI30","HLA-DQA1","HLA-DRB1","HLA-DRB5")
+enzymatic  = c("ALDH2","FBP1","PPT1") 
+cellularprocess = c("C1orf162","CST3","CAPG","PLAUR","C15orf48","STXBP2")
+
+pdf("dotplot.liu.pdf",height = 8,width = 16)
+DotPlot(object = GSE167036.DC.so, features = c(immuneresponse,enzymatic,cellularprocess), group.by = 'sample_type2',scale.by = "radius",dot.scale = 15) + scale_colour_distiller(palette = 'RdBu') + 
+  theme(axis.text.x=element_text(size=20,angle = 90,vjust = 0.5, hjust=1),axis.text.y=element_text(size=20),
+        axis.title=element_text(size=20,face="bold")) + 
+  xlab('Genes')+ ylab('Groups')
+dev.off()
+
+
+```
+
+```{r cDc in Wu bc data}
+wu.breastcancer.myeloid.so <- readRDS("/data/wu.breastcancer.myeloid.so.rds")
+wu.genelists = data.frame(genesymbols = wu.breastcancer.myeloid.so@assays[["RNA"]]@meta.features[["feature_name"]])
+wu.genelists$geneid = rownames(wu.breastcancer.myeloid.so)
+rownames(wu.genelists) = wu.genelists$genesymbols
+DC.wu.so = subset(wu.breastcancer.myeloid.so,subset = celltype_minor == "DCs")
+Wu.metadata = wu.breastcancer.myeloid.so@meta.data
+Wu.metadata$treatmentstatus_subtype = paste(Wu.metadata$treatment_status,Wu.metadata$subtype_by_IHC)
+DC.wu.so$treatmentstatus_subtype = Wu.metadata[colnames(DC.wu.so),"treatmentstatus_subtype"]
+naive.DC.wu.so = subset(DC.wu.so,subset = treatment_status == "Naïve")
+
+
+
+unique(naive.DC.wu.so$treatmentstatus_subtype)
+dp = DotPlot(object = naive.DC.wu.so, features = wu.genelists[c(immuneresponse,enzymatic,cellularprocess),"geneid"], group.by = 'treatmentstatus_subtype',col.min = -1.5,
+  col.max = 1.5,dot.min = 0,dot.scale = 12,scale.by = "radius") + scale_colour_distiller(palette = 'RdBu')+ 
+  theme(axis.text.x=element_text(size=20,angle = 90,vjust = 0.5, hjust=1),axis.text.y=element_text(size=20),
+        axis.title=element_text(size=20,face="bold")) + 
+  xlab('Genes')+ ylab('Groups')
+dp$data$features.plot <- factor(dp$data$features.plot, 
+                                      levels = wu.genelists[c(immuneresponse,enzymatic,cellularprocess),"geneid"], 
+                                      labels = c(immuneresponse,enzymatic,cellularprocess))
+pdf("dotplot.wu.pdf",height = 8,width = 16)
+dp
+dev.off()
+table(DC.wu.so$treatmentstatus_subtype)
+unique(naive.DC.wu.so$donor_id)
+
+
+```

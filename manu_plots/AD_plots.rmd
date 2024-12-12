@@ -1,0 +1,176 @@
+---
+title: "EC.excitatoryneurons.analysis"
+output: html_document
+date: "2024-10-20"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(Seurat)
+
+options(Seurat.object.assay.version = 'v3')
+
+library(dplyr)
+library('Rcpp')
+
+library(rhdf5)
+library(Matrix)
+
+library(ggplot2)
+library(dplyr)
+library('limma')
+library('cluster')
+library('patchwork')
+library('stats')
+
+library('reticulate')
+library('MASS')
+library('corpcor')
+library('RcppArmadillo')
+library('MAST')
+library('GSVA')
+```
+
+
+
+
+```{r}
+EC.excitatoryneurons.counts.so = readRDS('/data/EC.excitatoryneurons.counts.so.rds')
+
+
+ret = readRDS('/data/EC.excitatoryneurons.corrected.perc96.cutoff4.ret.rds')
+
+
+```
+```{r}
+EC.excitatoryneurons.counts.so = getcellsgroup(EC.excitatoryneurons.counts.so,ret[[4]],
+                     ret[[5]],
+                     'CFS1',0.96)
+
+EC.excitatoryneurons.counts.so$CFS1.inputmarkers = getscore('CFS1',ret[[4]],
+                     ret[[5]],EC.excitatoryneurons.counts.so@assays$RNA@counts[c(ret[[4]],ret[[5]]),])
+EC.excitatoryneurons.counts.so$CFS1.newmarkers = getscore('CFS1',ret[[2]],
+                     ret[[3]],EC.excitatoryneurons.counts.so@assays$RNA@counts[c(ret[[2]],ret[[3]]),])
+EC.excitatoryneurons.counts.so$CFS1.combinedmarkers = getscore('CFS1',c(ret[[2]],ret[[4]]),
+                     c(ret[[3]],ret[[5]]),EC.excitatoryneurons.counts.so@assays$RNA@counts[c(ret[[2]],ret[[3]],ret[[4]],ret[[5]]),])
+
+hist(EC.excitatoryneurons.counts.so$CFS1.inputmarkers)
+hist(EC.excitatoryneurons.counts.so$CFS1.newmarkers)
+hist(EC.excitatoryneurons.counts.so$CFS1.combinedmarkers)
+
+CFS1.df = EC.excitatoryneurons.counts.so@meta.data
+
+CFS1.df = CFS1.df[rownames(meta.data),]
+meta.data = EC.excitatoryneurons.so@meta.data
+meta.data$CFS1.inputmarkers = CFS1.df$CFS1.inputmarkers
+meta.data$CFS1.newmarkers = CFS1.df$CFS1.newmarkers
+meta.data$CFS1.combinedmarkers = CFS1.df$CFS1.combinedmarkers 
+
+meta.data %>% ggplot() + geom_density(aes(x = CFS1.inputmarkers)) + facet_grid(~BraakStage)
+meta.data %>% ggplot() + geom_density(aes(x = CFS1.newmarkers)) + facet_grid(~BraakStage)
+meta.data %>% ggplot() + geom_density(aes(x = CFS1.combinedmarkers)) + facet_grid(~BraakStage)
+
+meta.data %>% ggplot() + geom_violin(aes(x = CFS1.combinedmarkers,y = BraakStage)) 
+```
+```{r}
+library(ggplot2)
+library(ggdist)
+library(ggsignif)
+
+jpeg("ECneurons.braak.CFS1.input.jpeg",width=30,height=20,units="cm",res=300)
+meta.data %>% 
+ggplot(aes(x = BraakStage, y = CFS1.inputmarkers, fill = BraakStage)) +
+  
+  # add half-violin from {ggdist} package
+  stat_halfeye(
+    # adjust bandwidth
+    adjust =1.5,
+    # move to the right
+    justification = -0.2,
+    # remove the slub interval
+    .width = 0,
+    point_colour = "#F0E442"
+  ) +
+  
+  geom_boxplot(
+    width = 0.2,
+    # removing outliers
+    outlier.color = "#F0E442",
+    alpha = 0.5
+  ) + ylab("CFS by Input Markers") + xlab("Braak Stage") +
+  theme_minimal()  + theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold"))  + scale_fill_manual(values = c( "#bfe4ee","#fbd178","#F9c3bf")) +
+    coord_flip() 
+dev.off()
+```
+
+```{r}
+jpeg("ECneurons.braak.CFS1.new.jpeg",width=30,height=20,units="cm",res=300)
+meta.data %>% 
+ggplot(aes(x = BraakStage, y = CFS1.newmarkers, fill = BraakStage)) +
+  
+  # add half-violin from {ggdist} package
+  stat_halfeye(
+    # adjust bandwidth
+    adjust =1.5,
+    # move to the right
+    justification = -0.2,
+    # remove the slub interval
+    .width = 0,
+    point_colour = "#F0E442"
+  ) +
+  
+  geom_boxplot(
+    width = 0.2,
+    # removing outliers
+    outlier.color = "#F0E442",
+    alpha = 0.5
+  ) + ylab("CFS by New Markers") + xlab("Braak Stage") +
+  theme_minimal()  + theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold"))  + scale_fill_manual(values = c( "#bfe4ee","#fbd178","#F9c3bf")) +
+    coord_flip() 
+dev.off()
+```
+```{r}
+jpeg("ECneurons.braak.CFS1.combined.jpeg",width=30,height=20,units="cm",res=300)
+meta.data %>% 
+ggplot(aes(x = BraakStage, y = CFS1.combinedmarkers, fill = BraakStage)) +
+  
+  # add half-violin from {ggdist} package
+  stat_halfeye(
+    # adjust bandwidth
+    adjust =1.5,
+    # move to the right
+    justification = -0.2,
+    # remove the slub interval
+    .width = 0,
+    point_colour = "#F0E442"
+  ) +
+  
+  geom_boxplot(
+    width = 0.2,
+    # removing outliers
+    outlier.color = "#F0E442",
+    alpha = 0.5
+  ) + ylab("CFS by Combined Markers") + xlab("Braak Stage") +
+  theme_minimal()  + theme(
+  axis.title.x = element_text(size = 22,face = "bold"),
+  axis.text.y = element_text(size = 20,face = "bold"),
+  axis.title.y = element_text(size = 22,face = "bold"),
+  axis.text.x = element_text(size = 20,face = "bold"),
+  legend.title=element_text(size=22,face = "bold"), 
+    legend.text=element_text(size=20,face = "bold"))  + scale_fill_manual(values = c( "#bfe4ee","#fbd178","#F9c3bf")) +
+    coord_flip() 
+dev.off()
+```
+
